@@ -1,0 +1,28 @@
+// Better-T-Stack project metadata
+//
+// Keep this file to use the `add` command.
+// Add addons: bunx create-better-t-stack@latest add
+//
+// Docs: https://better-t-stack.dev/docs
+// Stack Builder: https://better-t-stack.dev/new
+
+{
+  "$schema": "https://r2.better-t-stack.dev/schema.json",
+  "version": "3.47.0",
+  "createdAt": "2026-10-17T14:26:02.574Z",
+  "reproducibleCommand": "bun create better-t-stack@latest emblish_workspace --frontend next native-uniwind --backend convex --runtime none --database none --orm none --api none --auth better-auth --payments none --addons biome husky pwa skills turborepo --examples none --db-setup none --web-deploy vercel --server-deploy none --git --package-manager bun --install",
+  "database": "none",
+  "orm": "none",
+  "backend": "convex",
+  "runtime": "none",
+  "frontend": ["next", "native-uniwind"],
+  "addons": ["biome", "husky", "pwa", "skills", "turborepo"],
+  "examples": [],
+  "auth": "better-auth",
+  "payments": "none",
+  "packageManager": "bun",
+  "dbSetup": "none",
+  "api": "none",
+  "webDeploy": "vercel",
+  "serverDeploy": "none",
+}

@@ -1,0 +1,40 @@
+{
+  "name": "web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --port 3001",
+    "build": "next build",
+    "check-types": "tsc --noEmit",
+    "start": "next start",
+    "env:generate": "varlock codegen"
+  },
+  "dependencies": {
+    "@convex-dev/better-auth": "catalog:",
+    "@emblish_workspace/backend": "workspace:*",
+    "@emblish_workspace/ui": "workspace:*",
+    "@swc/helpers": "^0.5.23",
+    "@tanstack/react-form": "catalog:",
+    "@varlock/nextjs-integration": "1.2.2",
+    "babel-plugin-react-compiler": "^1.0.0",
+    "better-auth": "catalog:",
+    "convex": "catalog:",
+    "lucide-react": "catalog:",
+    "next": "^16.3.4",
+    "next-themes": "catalog:",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "sonner": "catalog:",
+    "varlock": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@emblish_workspace/config": "workspace:*",
+    "@tailwindcss/postcss": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "catalog:",
+    "tailwindcss": "catalog:",
+    "typescript": "^6.0.3"
+  }
+}
