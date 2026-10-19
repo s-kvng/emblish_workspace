@@ -16,6 +16,10 @@ _Avoid_: Admin app, mobile app, dashboard
 A person working for the company who uses the Back Office.
 _Avoid_: Admin, user, employee
 
+**Customer**:
+A person who buys on the Storefront, identified by a verified phone number. A Customer comes into being on their first verified checkout; there is no separate sign-up.
+_Avoid_: User, account, guest, buyer
+
 ## Catalog
 
 **Pre-order Product**:
