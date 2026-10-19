@@ -38,15 +38,27 @@ _Avoid_: Batch, import batch, drop, campaign
 
 **Item Payment**:
 The first payment on a Pre-order, covering the full price of the goods.
-_Avoid_: Deposit, down payment, first payment
+_Avoid_: Deposit, down payment, first payment, pre-order fee
 
 **Shipping Fee**:
-The second payment on a Pre-order, charged once the goods have arrived and the cost of importing them is known.
+The second payment on a Pre-order, charged per arrived unit once the goods have arrived. An estimate may be shown when the Pre-order is placed; the amount charged is confirmed by Staff on arrival.
 _Avoid_: Top-up, balance, second payment
+
+**Delivery Fee**:
+The charge for delivering arrived goods to a customer who chose Delivery; billed on the Shipping Fee Invoice when already known, otherwise on its own invoice.
+_Avoid_: Courier fee, dispatch fee
+
+**Minimum Order Quantity**:
+The fewest units of a Pre-order Product a single Pre-order may contain; optional, set per product.
+_Avoid_: MOQ (in customer-facing text), minimum batch
 
 **Shipping Fee Invoice**:
 The request sent to a customer to pay the Shipping Fee.
 _Avoid_: Shipping bill, balance invoice
+
+**Receipt**:
+The confirmation a customer receives after a payment succeeds. An invoice requests money not yet paid; a Receipt confirms money received.
+_Avoid_: Invoice (for a payment already made), proof of payment
 
 **Forfeit**:
 Staff ending a Pre-order whose Shipping Fee Invoice has gone unpaid long past its due date; the goods are released to stock and the Item Payment is not automatically refunded.
