@@ -22,13 +22,29 @@ _Avoid_: User, account, guest, buyer
 
 ## Catalog
 
+**Product**:
+A thing the company sells, listed in the Back Office and shown on the Storefront. The same Product can be offered for Pre-order, In-stock, or both at once.
+_Avoid_: Item, listing, SKU
+
+**Variant**:
+One purchasable version of a Product, distinguished by its options (such as size or colour), with its own SKU. Every Product has at least one Variant; stock, prices and order lines always refer to a Variant.
+_Avoid_: Option, model, SKU (for the whole Product)
+
+**Category**:
+A group used to browse Products on the Storefront. Categories form a flat list; each Product belongs to exactly one.
+_Avoid_: Collection, department, tag
+
 **Pre-order Product**:
-A product listed for ordering before the company has imported it.
+A Product while it has an open Order Window, i.e. while it is being offered for ordering before the company has imported it.
 _Avoid_: Upcoming product, backorder
 
 **In-stock Product**:
-A product the company already holds in its warehouse or shop and can sell immediately.
+A Product while the company holds sellable units of it in its warehouse or shop, i.e. while it can be bought immediately.
 _Avoid_: Available product, ready product
+
+**Store Price**:
+The price at which a Variant is sold In-stock, set independently of any Order Window's Pre-order price.
+_Avoid_: Retail price, shelf price, regular price
 
 ## Pre-order lifecycle
 
