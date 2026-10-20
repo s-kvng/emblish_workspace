@@ -39,12 +39,38 @@ A Product while it has an open Order Window, i.e. while it is being offered for 
 _Avoid_: Upcoming product, backorder
 
 **In-stock Product**:
-A Product while the company holds sellable units of it in its warehouse or shop, i.e. while it can be bought immediately.
+A Product while any of its Variants has Stock, i.e. while it can be bought immediately.
 _Avoid_: Available product, ready product
 
 **Store Price**:
 The price at which a Variant is sold In-stock, set independently of any Order Window's Pre-order price.
 _Avoid_: Retail price, shelf price, regular price
+
+## Inventory
+
+**Stock**:
+The sellable units of a Variant the company holds, counted as one pool regardless of where they physically sit. Units allocated to Pre-orders are never Stock.
+_Avoid_: Inventory (for the count), on-hand, warehouse stock, shop stock
+
+**Stock Movement**:
+A recorded change to a Variant's Stock, with its kind, quantity, who made it and why. Stock is the sum of its Stock Movements; it is never edited directly.
+_Avoid_: Stock change, transaction, log entry
+
+**Adjustment**:
+A Stock Movement made by Staff to bring Stock in line with reality, such as a recount, damage or loss; it always carries a reason.
+_Avoid_: Correction, write-off, stock edit
+
+**Stock Hold**:
+Units of Stock set aside for an In-stock checkout while it awaits payment; it becomes a sale on payment and lapses if the checkout expires.
+_Avoid_: Reservation, lock, cart hold
+
+**Store Quantity**:
+Units of a Variant that Staff add to an Order Window's supplier order to sell from Stock rather than to fill Pre-orders.
+_Avoid_: Extras, buffer stock, spare units
+
+**Surplus**:
+Units of an Order Window's arrival left over after its Pre-orders and Store Quantity are filled, plus any that turn up after the arrival is recorded; they go into Stock.
+_Avoid_: Overage, extra stock, leftovers
 
 ## Pre-order lifecycle
 
