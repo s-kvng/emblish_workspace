@@ -91,7 +91,7 @@ The second payment on a Pre-order, charged per arrived unit once the goods have 
 _Avoid_: Top-up, balance, second payment
 
 **Delivery Fee**:
-The charge for delivering arrived goods to a customer who chose Delivery; billed on the Shipping Fee Invoice when already known, otherwise on its own invoice.
+The charge for delivering a Pre-order's or Store Order's goods to a Customer who chose Delivery, set by their Delivery Zone. On a Pre-order it is billed on the Shipping Fee Invoice when already known, otherwise on its own invoice.
 _Avoid_: Courier fee, dispatch fee
 
 **Minimum Order Quantity**:
@@ -114,6 +114,22 @@ _Avoid_: Abandon, expire, write off
 Units ordered in an Order Window that never arrive; the affected Pre-orders are refunded for the missing units, earliest-placed Pre-orders being filled first.
 _Avoid_: Backorder, missing stock
 
+## Store sales
+
+**Store Order**:
+A Customer's paid purchase of In-stock Variants. One checkout may create a Store Order alongside Pre-orders; each is fulfilled on its own.
+_Avoid_: In-stock order, direct order, purchase
+
+## Fulfilment
+
 **Fulfilment Method**:
-How the customer receives arrived goods: Pickup or Delivery.
+How the Customer receives a Pre-order's or Store Order's goods: Pickup or Delivery.
 _Avoid_: Shipping option, collection mode
+
+**Pickup Code**:
+A short code sent to the Customer by SMS when goods are ready for Pickup, given to Staff at handover to prove the goods are theirs.
+_Avoid_: Collection code, OTP, PIN
+
+**Delivery Zone**:
+An area the company delivers to, with a flat Delivery Fee set by Staff; "Elsewhere in Ghana" is a zone whose fee Staff quote per order.
+_Avoid_: Region, area, delivery band
