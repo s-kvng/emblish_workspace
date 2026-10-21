@@ -79,7 +79,7 @@ _Avoid_: Overage, extra stock, leftovers
 ## Pre-order lifecycle
 
 **Pre-order**:
-A customer's order for a Pre-order Product within one Order Window, settled in two payments: the Item Payment and the Shipping Fee. A Pre-order exists only once its Item Payment has succeeded; an unpaid checkout is not a Pre-order. One checkout may create several Pre-orders, one per Order Window.
+A customer's order for a Pre-order Product within one Order Window, settled in two payments: the Item Payment and the Shipping Fee. A Pre-order exists only once its Item Payment has succeeded; an unpaid Checkout is not a Pre-order. One Checkout may create several Pre-orders, one per Order Window.
 _Avoid_: Reservation, booking
 
 **Order Window**:
@@ -107,7 +107,7 @@ The request sent to a customer to pay the Shipping Fee.
 _Avoid_: Shipping bill, balance invoice
 
 **Receipt**:
-The confirmation a customer receives after a payment succeeds. An invoice requests money not yet paid; a Receipt confirms money received.
+The confirmation a customer receives after a payment succeeds, one per payment, listing what it paid for under each order it covers. An invoice requests money not yet paid; a Receipt confirms money received.
 _Avoid_: Invoice (for a payment already made), proof of payment
 
 **Forfeit**:
@@ -120,8 +120,12 @@ _Avoid_: Backorder, missing stock
 
 ## Store sales
 
+**Checkout**:
+A Customer's submitted basket awaiting a single payment. It may mix In-stock and Pre-order Variants; when paid it becomes at most one Store Order plus one Pre-order per Order Window, and if unpaid it expires as a whole.
+_Avoid_: Cart, basket, payment intent, order
+
 **Store Order**:
-A Customer's paid purchase of In-stock Variants. One checkout may create a Store Order alongside Pre-orders; each is fulfilled on its own.
+A Customer's paid purchase of In-stock Variants, paid in full with no Shipping Fee. One Checkout may create a Store Order alongside Pre-orders; each is fulfilled on its own.
 _Avoid_: In-stock order, direct order, purchase
 
 ## Fulfilment
