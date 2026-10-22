@@ -7,6 +7,6 @@ export default async function BrowsePrototype({
 }: {
 	searchParams: Promise<{ variant?: string }>;
 }) {
-	const { variant = "A" } = await searchParams;
+	const { variant = "D" } = await searchParams;
 	return <BrowseSwitch variant={variant} />;
 }

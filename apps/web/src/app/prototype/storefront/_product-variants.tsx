@@ -28,7 +28,7 @@ import {
 	windowLeft,
 	windowVariant,
 } from "./_data";
-import { Shot, stub, useSelection } from "./_shared";
+import { Shot, StoreHeader, stub, useSelection } from "./_shared";
 
 const back = (variant: string) => (
 	<Link
@@ -81,13 +81,14 @@ export function ProductA({ product: p }: { product: Product }) {
 			p.options.every((o) => x.options[o.name] === probe[o.name]),
 		);
 		if (!v) return "bg-transparent";
-		if (canBuyNow(v)) return "bg-emerald-500";
-		if (canPreorder(p, v)) return "bg-amber-400";
+		if (canBuyNow(v)) return "bg-(--em-purple)";
+		if (canPreorder(p, v)) return "bg-(--em-gold)";
 		return "bg-transparent";
 	};
 
 	return (
 		<div className="mx-auto w-full min-w-0 max-w-md pb-48">
+			<StoreHeader />
 			<div className="px-4 py-2">{back("A")}</div>
 			<Shot
 				product={p}
@@ -103,7 +104,7 @@ export function ProductA({ product: p }: { product: Product }) {
 							variant={variant}
 							shot={i}
 							label={false}
-							className={`size-14 rounded ${shot === i ? "ring-2 ring-foreground" : "opacity-70"}`}
+							className={`size-14 rounded ${shot === i ? "ring-2 ring-primary" : "opacity-70"}`}
 						/>
 					</button>
 				))}
@@ -129,7 +130,7 @@ export function ProductA({ product: p }: { product: Product }) {
 										key={val}
 										type="button"
 										onClick={() => pick(o.name, val)}
-										className={`relative rounded-md border px-3 py-1.5 text-sm ${sel[o.name] === val ? "border-foreground ring-1 ring-foreground" : ""} ${ok ? "" : "text-muted-foreground line-through"}`}
+										className={`relative rounded-md border px-3 py-1.5 text-sm ${sel[o.name] === val ? "border-primary ring-1 ring-primary" : ""} ${ok ? "" : "text-muted-foreground line-through"}`}
 									>
 										{val}
 										<span
@@ -144,10 +145,10 @@ export function ProductA({ product: p }: { product: Product }) {
 				{p.options.length > 0 && (
 					<p className="flex gap-3 text-muted-foreground text-xs">
 						<span className="flex items-center gap-1">
-							<span className="size-2 rounded-full bg-emerald-500" /> In stock
+							<span className="size-2 rounded-full bg-(--em-purple)" /> In stock
 						</span>
 						<span className="flex items-center gap-1">
-							<span className="size-2 rounded-full bg-amber-400" /> Pre-order
+							<span className="size-2 rounded-full bg-(--em-gold)" /> Pre-order
 							only
 						</span>
 					</p>
@@ -158,7 +159,7 @@ export function ProductA({ product: p }: { product: Product }) {
 						type="button"
 						disabled={!now}
 						onClick={() => setOffer("now")}
-						className={`rounded-lg border p-3 text-left disabled:opacity-40 ${chosen === "now" ? "border-foreground ring-1 ring-foreground" : ""}`}
+						className={`rounded-lg border p-3 text-left disabled:opacity-40 ${chosen === "now" ? "border-primary ring-1 ring-primary" : ""}`}
 					>
 						<p className="font-semibold text-xs uppercase">Buy now</p>
 						<p className="mt-1 font-semibold text-lg">
@@ -178,7 +179,7 @@ export function ProductA({ product: p }: { product: Product }) {
 						type="button"
 						disabled={!pre}
 						onClick={() => setOffer("pre")}
-						className={`rounded-lg border p-3 text-left disabled:opacity-40 ${chosen === "pre" ? "border-foreground ring-1 ring-foreground" : ""}`}
+						className={`rounded-lg border p-3 text-left disabled:opacity-40 ${chosen === "pre" ? "border-primary ring-1 ring-primary" : ""}`}
 					>
 						<p className="font-semibold text-xs uppercase">Pre-order</p>
 						<p className="mt-1 font-semibold text-lg">
@@ -196,7 +197,7 @@ export function ProductA({ product: p }: { product: Product }) {
 				</div>
 
 				{chosen === "pre" && p.window && (
-					<dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 rounded-lg bg-amber-50 p-3 text-amber-950 text-sm dark:bg-amber-950/30 dark:text-amber-100">
+					<dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 rounded-lg bg-(--em-gold-soft) p-3 text-(--em-gold-ink) text-sm">
 						<dt className="opacity-70">Orders close</dt>
 						<dd>
 							{shortDate(p.window.closes)} ({daysLeft(p.window.closes)} days)
@@ -246,7 +247,7 @@ export function ProductA({ product: p }: { product: Product }) {
 						onClick={() =>
 							stub(`add ${qty} × ${variant.sku} (${chosen}) to Checkout`)
 						}
-						className="h-11 flex-1 rounded-md bg-foreground font-semibold text-background text-sm disabled:opacity-40"
+						className="h-11 flex-1 rounded-md bg-primary font-semibold text-primary-foreground text-sm disabled:opacity-40"
 					>
 						{chosen === "now"
 							? `Buy now · ${cedi((variant.storePrice ?? 0) * qty)}`
@@ -351,7 +352,7 @@ export function ProductB({ product: p }: { product: Product }) {
 										key={val}
 										type="button"
 										onClick={() => pick(o.name, val)}
-										className={`min-w-12 rounded-full border px-4 py-2 text-sm ${sel[o.name] === val ? "border-foreground bg-foreground text-background" : ""} ${ok ? "" : "border-dashed text-muted-foreground"}`}
+										className={`min-w-12 rounded-full border px-4 py-2 text-sm ${sel[o.name] === val ? "border-primary bg-primary text-primary-foreground" : ""} ${ok ? "" : "border-dashed text-muted-foreground"}`}
 									>
 										{val}
 									</button>
@@ -365,7 +366,7 @@ export function ProductB({ product: p }: { product: Product }) {
 					<p className="text-sm">
 						{available ? (
 							<>
-								<span className="font-medium text-emerald-700">In stock</span>
+								<span className="font-medium text-(--em-purple)">In stock</span>
 								{variant.stock <= 3 && ` · only ${variant.stock} left`} · Pickup
 								or Delivery
 							</>
@@ -377,7 +378,7 @@ export function ProductB({ product: p }: { product: Product }) {
 					</p>
 				) : (
 					p.window && (
-						<ol className="space-y-2 border-amber-400 border-l-2 pl-4 text-sm">
+						<ol className="space-y-2 border-(--em-gold) border-l-2 pl-4 text-sm">
 							<li>
 								<b>Order by {shortDate(p.window.closes)}</b> —{" "}
 								{daysLeft(p.window.closes)} days left
@@ -408,7 +409,7 @@ export function ProductB({ product: p }: { product: Product }) {
 					type="button"
 					disabled={!available}
 					onClick={() => stub(`add ${variant.sku} (${mode}) to Checkout`)}
-					className={`mx-auto block h-12 w-full max-w-md rounded-full font-semibold text-sm disabled:opacity-40 ${mode === "pre" ? "bg-amber-400 text-black" : "bg-foreground text-background"}`}
+					className={`mx-auto block h-12 w-full max-w-md rounded-full font-semibold text-sm disabled:opacity-40 ${mode === "pre" ? "bg-(--em-gold) text-(--em-purple-deep)" : "bg-primary text-primary-foreground"}`}
 				>
 					{!available
 						? "Unavailable"
@@ -478,6 +479,7 @@ export function ProductC({ product: p }: { product: Product }) {
 
 	return (
 		<div className="mx-auto w-full min-w-0 max-w-md pb-40">
+			<StoreHeader />
 			<div className="flex items-center justify-between px-4 py-2">
 				{back("C")}
 				<span className="text-muted-foreground text-xs">{p.category}</span>
@@ -511,7 +513,7 @@ export function ProductC({ product: p }: { product: Product }) {
 				</div>
 
 				{isInStock(p) && preorderable && (
-					<div className="flex items-center justify-between rounded-lg border border-emerald-600/30 bg-emerald-50 p-3 text-emerald-950 text-sm dark:bg-emerald-950/30 dark:text-emerald-100">
+					<div className="flex items-center justify-between rounded-lg border border-(--em-purple)/20 bg-(--em-purple-soft) p-3 text-(--em-purple) text-sm">
 						<span>
 							Want it now? In stock from{" "}
 							<b>
@@ -549,7 +551,7 @@ export function ProductC({ product: p }: { product: Product }) {
 								].map(([when, what], i) => (
 									<li key={what} className="relative">
 										<span
-											className={`mx-auto mb-1 block size-3 rounded-full ${i === 0 ? "bg-foreground" : "border-2 border-foreground bg-background"}`}
+											className={`mx-auto mb-1 block size-3 rounded-full ${i === 0 ? "bg-(--em-gold)" : "border-(--em-purple) border-2 bg-background"}`}
 										/>
 										<b className="block">{when}</b>
 										<span className="text-muted-foreground">{what}</span>
@@ -603,7 +605,7 @@ export function ProductC({ product: p }: { product: Product }) {
 									<div>
 										<div className="mt-2 h-1.5 rounded-full bg-background">
 											<div
-												className="h-1.5 rounded-full bg-amber-500"
+												className="h-1.5 rounded-full bg-(--em-gold)"
 												style={{
 													width: `${Math.min(100, (units / p.moq) * 100)}%`,
 												}}
@@ -654,7 +656,7 @@ export function ProductC({ product: p }: { product: Product }) {
 						type="button"
 						disabled={units === 0 || (p.moq !== undefined && units < p.moq)}
 						onClick={() => stub(`check out ${units} pre-order units`)}
-						className="mx-auto block h-11 w-full max-w-md rounded-md bg-foreground font-semibold text-background text-sm disabled:opacity-40"
+						className="mx-auto block h-11 w-full max-w-md rounded-md bg-primary font-semibold text-primary-foreground text-sm disabled:opacity-40"
 					>
 						{units === 0
 							? "Add options to pre-order"
@@ -665,7 +667,7 @@ export function ProductC({ product: p }: { product: Product }) {
 						type="button"
 						disabled={!canBuyNow(variant)}
 						onClick={() => stub(`buy ${variant.sku} now`)}
-						className="mx-auto block h-11 w-full max-w-md rounded-md bg-foreground font-semibold text-background text-sm disabled:opacity-40"
+						className="mx-auto block h-11 w-full max-w-md rounded-md bg-primary font-semibold text-primary-foreground text-sm disabled:opacity-40"
 					>
 						{canBuyNow(variant) ? "Buy now" : "Sold out"}
 					</button>

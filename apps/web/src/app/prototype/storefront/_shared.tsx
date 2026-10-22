@@ -2,6 +2,18 @@
 // PROTOTYPE — shared bits for the Storefront prototype: placeholder images and Variant selection.
 // Layout is deliberately NOT shared; each variant owns its own structure.
 
+import {
+	Coffee,
+	Footprints,
+	type LucideIcon,
+	Search,
+	Shirt,
+	ShoppingBag,
+	Sparkles,
+	User,
+} from "lucide-react";
+import type { Route } from "next";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -16,6 +28,15 @@ export function hueFor(p: Product, variant?: Variant) {
 	return p.hues[key ?? ""] ?? p.hues.default ?? Object.values(p.hues)[0] ?? 0;
 }
 
+const ICONS: Record<string, LucideIcon> = {
+	Clothing: Shirt,
+	Shoes: Footprints,
+	Bags: ShoppingBag,
+	Home: Coffee,
+	Beauty: Sparkles,
+};
+
+/** Placeholder product photo: a soft tinted tile with the category's icon, tinted per Variant. */
 export function Shot({
 	product,
 	variant,
@@ -34,20 +55,58 @@ export function Shot({
 		product.imageOption && variant
 			? variant.options[product.imageOption]
 			: undefined;
+	const Icon = ICONS[product.category] ?? ShoppingBag;
 	return (
 		<div
-			className={`relative flex items-end overflow-hidden ${className}`}
+			className={`relative grid place-items-center overflow-hidden ${className}`}
 			style={{
-				background: `linear-gradient(${135 + shot * 40}deg, oklch(0.86 0.07 ${hue}), oklch(0.62 0.11 ${hue + shot * 12}))`,
+				background: `radial-gradient(circle at ${30 + shot * 20}% 25%, oklch(0.99 0.01 ${hue}), oklch(0.93 0.045 ${hue}))`,
 			}}
 		>
+			<Icon
+				strokeWidth={1.1}
+				className="h-1/2 w-1/2 drop-shadow-xl"
+				style={{
+					color: `oklch(0.45 0.11 ${hue})`,
+					transform: `rotate(${shot * 8 - 8}deg) scale(${1 - shot * 0.08})`,
+				}}
+			/>
 			{label && (
-				<span className="m-2 rounded bg-black/40 px-1.5 py-0.5 text-[10px] text-white">
-					{product.name}
-					{tone ? ` · ${tone}` : ""} · {SHOTS[shot % SHOTS.length]}
+				<span className="absolute bottom-2 left-2 rounded-full bg-white/80 px-2 py-0.5 text-(--em-ink) text-[10px] backdrop-blur">
+					{tone ? `${tone} · ` : ""}
+					{SHOTS[shot % SHOTS.length]}
 				</span>
 			)}
 		</div>
+	);
+}
+
+/** Shared store header (allowed to be shared; layout below it is not). */
+export function StoreHeader() {
+	return (
+		<header className="flex items-center justify-between px-4 py-3">
+			<Link
+				href={"/prototype/storefront?variant=D" as Route}
+				className="flex items-center gap-1.5"
+			>
+				<span className="grid size-7 rotate-45 place-items-center rounded-md bg-(--em-purple)">
+					<span className="size-2.5 rounded-sm bg-(--em-gold)" />
+				</span>
+				<span className="display ml-1 font-semibold text-(--em-purple) text-xl">
+					Emblish
+				</span>
+			</Link>
+			<div className="flex items-center gap-4 text-(--em-purple)">
+				<Search className="size-5" />
+				<User className="size-5" />
+				<span className="relative">
+					<ShoppingBag className="size-5" />
+					<span className="absolute -top-1.5 -right-1.5 grid size-4 place-items-center rounded-full bg-(--em-gold) font-semibold text-(--em-purple-deep) text-[9px]">
+						2
+					</span>
+				</span>
+			</div>
+		</header>
 	);
 }
 
