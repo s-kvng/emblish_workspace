@@ -99,12 +99,15 @@ export function StoreHeader() {
 			<div className="flex items-center gap-4 text-(--em-purple)">
 				<Search className="size-5" />
 				<User className="size-5" />
-				<span className="relative">
+				<Link
+					href={"/prototype/storefront/checkout" as Route}
+					className="relative"
+				>
 					<ShoppingBag className="size-5" />
 					<span className="absolute -top-1.5 -right-1.5 grid size-4 place-items-center rounded-full bg-(--em-gold) font-semibold text-(--em-purple-deep) text-[9px]">
-						2
+						5
 					</span>
-				</span>
+				</Link>
 			</div>
 		</header>
 	);
