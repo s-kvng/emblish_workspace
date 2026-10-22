@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "dev:web"],
+      "port": 3001
+    },
+    {
+      "name": "web-prototype",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "NEXT_PUBLIC_CONVEX_URL=https://prototype-no-backend.convex.cloud",
+        "NEXT_PUBLIC_CONVEX_SITE_URL=https://prototype-no-backend.convex.site",
+        "bun",
+        "run",
+        "dev:web"
+      ],
+      "port": 3001
+    }
+  ]
+}
