@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "native-web",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "EXPO_PUBLIC_CONVEX_URL=https://prototype-offline-123.convex.cloud EXPO_PUBLIC_CONVEX_SITE_URL=https://prototype-offline-123.convex.site bun run --cwd apps/native web --port 8081 --clear"],
+      "port": 8081
+    }
+  ]
+}
