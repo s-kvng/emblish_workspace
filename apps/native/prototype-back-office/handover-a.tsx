@@ -2,11 +2,13 @@
 // Home-first. A Today tab with one search box (phone or Pickup Code) for handover, and queue cards underneath
 // (Ready for Pickup, To dispatch, Out for delivery, Quote, Uncollected, Refunds of every kind, Needs prices).
 // Orders open as a full-screen detail with one primary action and a "⋯ More" sheet. More tab: Stock, zones, Staff.
-import { useState } from "react";
+// With `withCounter` (variant D) every handover goes through variant C's keypad Counter, opened as an overlay.
+import { createContext, useContext, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 
 import { ME, fmtDate, ghs, useBO, variantLabel, type Role } from "./bo-data";
 import { ArrivalsList, Inbox, Wizard } from "./arrival-b";
+import { Counter } from "./handover-c";
 import {
   UNCOLLECTED_AFTER,
   collect,
@@ -73,7 +75,11 @@ const QUEUES: { key: QueueKey; title: string; icon: string; owner?: boolean; tes
   },
 ];
 
-export default function HandoverA({ role }: { role: Role }) {
+/** Opens the Counter overlay, optionally aimed at one order. Null outside variant D. */
+const CounterCtx = createContext<((target?: HOrder) => void) | null>(null);
+
+export default function HandoverA({ role, withCounter }: { role: Role; withCounter?: boolean }) {
+  const [counter, setCounter] = useState<{ target?: HOrder } | null>(null);
   const [tab, setTab] = useState<Tab>("today");
   const [stack, setStack] = useState<Screen[]>([]);
   const [wizard, setWizard] = useState<string | null>(null);
@@ -82,7 +88,21 @@ export default function HandoverA({ role }: { role: Role }) {
   const top = stack.at(-1);
   const title = { today: "Today", arrivals: "Arrivals", invoices: "Invoices", more: "More" }[tab];
 
+  const tabs: [Tab, string, string][] = [
+    ["today", "🏠", "Today"],
+    ["arrivals", "📦", "Arrivals"],
+    ["invoices", "🧾", "Invoices"],
+    ["more", "☰", "More"],
+  ];
+  const tabBtn = ([t, icon, label]: [Tab, string, string]) => (
+    <Pressable key={t} onPress={() => setTab(t)} className="flex-1 items-center pt-2.5">
+      <Text className={`text-lg ${tab === t ? "" : "opacity-40"}`}>{icon}</Text>
+      <Text className={`text-[11px] font-semibold ${tab === t ? "text-[#6d28d9]" : "text-zinc-500"}`}>{label}</Text>
+    </Pressable>
+  );
+
   return (
+    <CounterCtx.Provider value={withCounter ? (target) => setCounter({ target }) : null}>
     <View className="flex-1 bg-zinc-100">
       {top ? (
         <Pushed screen={top} role={role} onBack={pop} push={push} />
@@ -99,24 +119,43 @@ export default function HandoverA({ role }: { role: Role }) {
           {tab === "invoices" && <Inbox role={role} />}
           {tab === "more" && <More role={role} push={push} />}
           <View className="absolute left-0 right-0 bottom-0 bg-white border-t border-zinc-200 flex-row" style={{ paddingBottom: 18 }}>
-            {(
-              [
-                ["today", "🏠", "Today"],
-                ["arrivals", "📦", "Arrivals"],
-                ["invoices", "🧾", "Invoices"],
-                ["more", "☰", "More"],
-              ] as [Tab, string, string][]
-            ).map(([t, icon, label]) => (
-              <Pressable key={t} onPress={() => setTab(t)} className="flex-1 items-center pt-2.5">
-                <Text className={`text-lg ${tab === t ? "" : "opacity-40"}`}>{icon}</Text>
-                <Text className={`text-[11px] font-semibold ${tab === t ? "text-[#6d28d9]" : "text-zinc-500"}`}>{label}</Text>
-              </Pressable>
-            ))}
+            {withCounter ? (
+              <>
+                {tabs.slice(0, 2).map(tabBtn)}
+                {/* raised centre button: the Counter is one tap away from every tab */}
+                <Pressable onPress={() => setCounter({})} className="flex-1 items-center">
+                  <View className="w-16 h-16 -mt-6 rounded-full bg-zinc-900 border-4 border-white items-center justify-center" style={{ shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 6 }}>
+                    <Text className="text-2xl">🔢</Text>
+                  </View>
+                  <Text className="text-[11px] font-bold text-zinc-900">Hand over</Text>
+                </Pressable>
+                {tabs.slice(2).map(tabBtn)}
+              </>
+            ) : (
+              tabs.map(tabBtn)
+            )}
           </View>
         </>
       )}
       {wizard && <Wizard windowId={wizard} role={role} onClose={() => setWizard(null)} />}
+      {counter && <CounterOverlay role={role} target={counter.target} onClose={() => setCounter(null)} onNext={() => setCounter({})} />}
       <HandoverPeek />
+    </View>
+    </CounterCtx.Provider>
+  );
+}
+
+/** Variant C's dark keypad desk, sliding over whatever tab is open. */
+function CounterOverlay({ role, target, onClose, onNext }: { role: Role; target?: HOrder; onClose: () => void; onNext: () => void }) {
+  return (
+    <View className="absolute inset-0 bg-zinc-900" style={{ zIndex: 800 }}>
+      <View style={{ paddingTop: 44 }} className="px-4 pb-2 flex-row items-center justify-between">
+        <Text className="text-lg font-bold text-white">{target ? `Hand over ${target.ref}` : "Counter"}</Text>
+        <Pressable onPress={onClose} className="px-2 py-1">
+          <Text className="text-zinc-400 text-xl">✕</Text>
+        </Pressable>
+      </View>
+      <Counter role={role} target={target} onExit={onClose} onNext={onNext} />
     </View>
   );
 }
@@ -185,11 +224,25 @@ function Today({ role, push }: { role: Role; push: (s: Screen) => void }) {
   const { products, windows } = useBO();
   const gaps = priceGaps(products, windows);
   const owner = role === "owner";
+  const openCounter = useContext(CounterCtx);
+  const readyPickup = orders.filter((o) => o.state === "Ready for handover" && o.fulfilment.kind === "Pickup").length;
   return (
     <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 120 }} keyboardShouldPersistTaps="handled">
+      {openCounter && !q && (
+        <Pressable onPress={() => openCounter()} className="bg-zinc-900 rounded-2xl p-4 mb-3 flex-row items-center gap-3">
+          <View className="w-12 h-12 rounded-xl bg-[#facc15] items-center justify-center">
+            <Text className="text-2xl">🔢</Text>
+          </View>
+          <View className="flex-1">
+            <Text className="text-white text-base font-black">Customer at the counter?</Text>
+            <Text className="text-zinc-400 text-xs">Tap and type their Pickup Code · {readyPickup} waiting</Text>
+          </View>
+          <Text className="text-[#facc15] text-xl">›</Text>
+        </Pressable>
+      )}
       <View className="flex-row items-center bg-white border-2 border-[#6d28d9] rounded-2xl px-3">
         <Text className="text-base">🔍</Text>
-        <TextInput value={q} onChangeText={setQ} placeholder="Phone or Pickup Code" keyboardType="number-pad" className="flex-1 px-2 py-3 text-base text-zinc-900" />
+        <TextInput value={q} onChangeText={setQ} placeholder={openCounter ? "Find a Customer by phone or code" : "Phone or Pickup Code"} keyboardType="number-pad" className="flex-1 px-2 py-3 text-base text-zinc-900" />
         {!!q && (
           <Pressable onPress={() => setQ("")} className="px-1">
             <Text className="text-zinc-400">✕</Text>
@@ -423,6 +476,7 @@ function OrderDetail({ id, role, onBack }: { id: string; role: Role; onBack: () 
   const [override, setOverride] = useState<string | null>(null);
   const [rider, setRider] = useState("");
   const [fail, setFail] = useState<string>("");
+  const openCounter = useContext(CounterCtx);
   if (!o) return null;
   const close = () => setSheet(null);
   const handed = isHandedOver(o);
@@ -431,7 +485,7 @@ function OrderDetail({ id, role, onBack }: { id: string; role: Role; onBack: () 
 
   const primary: { label: string; tone?: "violet" | "red" | "dark" | "green"; onPress: () => void } | null =
     o.state === "Ready for handover" && o.fulfilment.kind === "Pickup"
-      ? { label: "Hand over", onPress: () => setSheet("handover") }
+      ? { label: openCounter ? "🔢 Hand over at the Counter" : "Hand over", onPress: () => (openCounter ? openCounter(o) : setSheet("handover")) }
       : o.state === "Ready for handover"
         ? { label: "Dispatch", tone: "dark", onPress: () => setSheet("dispatch") }
         : o.state === "Dispatched"

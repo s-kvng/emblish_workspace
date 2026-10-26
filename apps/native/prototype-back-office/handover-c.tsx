@@ -111,7 +111,8 @@ export default function HandoverC({ role }: { role: Role }) {
 type Extra = { id: string; code: string; reason?: string; open: boolean };
 const OVERRIDE_REASONS = ["Lost the SMS", "Collecting for someone else", "Phone dead", "Other"] as const;
 
-function Counter({ role }: { role: Role }) {
+/** Also used by variant D as a full-screen overlay: `target` aims it at one order, `onExit` adds a way back. */
+export function Counter({ role, target, onExit, onNext }: { role: Role; target?: HOrder; onExit?: () => void; onNext?: () => void }) {
   const orders = useOrders();
   const [code, setCode] = useState("");
   const [mode, setMode] = useState<"code" | "phone">("code");
@@ -157,9 +158,14 @@ function Counter({ role }: { role: Role }) {
           {done.verb} · {first(done.name)}
         </Text>
         <Text className="text-zinc-400 text-sm mt-1 text-center">{done.refs.join(" · ")}</Text>
-        <Pressable onPress={reset} className="mt-8 bg-[#facc15] rounded-2xl px-10 py-4">
+        <Pressable onPress={() => (reset(), onNext?.())} className="mt-8 bg-[#facc15] rounded-2xl px-10 py-4">
           <Text className="text-zinc-900 text-lg font-black">Next customer</Text>
         </Pressable>
+        {onExit && (
+          <Pressable onPress={onExit} className="mt-4 py-2">
+            <Text className="text-zinc-400 text-sm font-semibold">Done · back to Today</Text>
+          </Pressable>
+        )}
       </View>
     );
 
@@ -323,7 +329,9 @@ function Counter({ role }: { role: Role }) {
 
   return (
     <View className="flex-1 px-6" style={{ paddingBottom: 110 }}>
-      <Text className="text-zinc-400 text-center text-sm mt-2">Ask for the Pickup Code</Text>
+      <Text className="text-zinc-400 text-center text-sm mt-2">
+        {target ? `Ask ${first(target.customer)} for the code for ${target.ref}` : "Ask for the Pickup Code"}
+      </Text>
       <Animated.View style={{ transform: [{ translateX: shake }] }} className="flex-row justify-center gap-2 mt-4">
         {Array.from({ length: 6 }).map((_, i) => (
           <View key={i} className={`w-12 h-16 rounded-xl items-center justify-center border-2 ${wrong ? "border-red-500 bg-red-950" : code.length === i ? "border-[#facc15] bg-zinc-800" : "border-zinc-700 bg-zinc-800"} ${i === 3 ? "ml-2" : ""}`}>
@@ -350,7 +358,13 @@ function Counter({ role }: { role: Role }) {
           </View>
         ))}
       </View>
-      <Pressable onPress={() => setMode("phone")} className="items-center py-2">
+      <Pressable
+        onPress={() => {
+          setMode("phone");
+          if (target) (setPhone(target.phone), setPicked(target.id));
+        }}
+        className="items-center py-2"
+      >
         <Text className="text-[#facc15] text-sm font-semibold">Customer has no code →</Text>
       </Pressable>
     </View>
