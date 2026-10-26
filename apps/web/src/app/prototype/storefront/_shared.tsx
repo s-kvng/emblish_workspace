@@ -84,19 +84,18 @@ export function Shot({
 /** Shared store header (allowed to be shared; layout below it is not). */
 export function StoreHeader() {
 	return (
-		<header className="flex items-center justify-between px-4 py-3">
+		<header className="flex items-center justify-between bg-(--em-header-bg) px-4 py-3">
 			<Link
 				href={"/prototype/storefront?variant=D" as Route}
 				className="flex items-center gap-1.5"
 			>
-				<span className="grid size-7 rotate-45 place-items-center rounded-md bg-(--em-purple)">
-					<span className="size-2.5 rounded-sm bg-(--em-gold)" />
-				</span>
-				<span className="display ml-1 font-semibold text-(--em-purple) text-xl">
-					Emblish
+				{/* PROTOTYPE (#18): real emblem + type-set wordmark, skinned per direction */}
+				<img src="/prototype-brand/emblem.png" alt="" className="size-8" />
+				<span className="em-wordmark ml-0.5 text-(--em-wordmark) text-xl">
+					EMBLISH
 				</span>
 			</Link>
-			<div className="flex items-center gap-4 text-(--em-purple)">
+			<div className="flex items-center gap-4 text-(--em-header-ink)">
 				<Search className="size-5" />
 				<User className="size-5" />
 				<span className="relative">

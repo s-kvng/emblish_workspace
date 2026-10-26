@@ -366,30 +366,30 @@ export function BrowseD() {
 			<StoreHeader />
 
 			{/* Hero */}
-			<section className="mx-4 overflow-hidden rounded-3xl bg-gradient-to-br from-(--em-purple-deep) via-(--em-purple) to-[#6b2fa0] text-white">
+			<section className="mx-4 overflow-hidden rounded-3xl bg-(image:--em-hero-bg) text-(--em-hero-ink)">
 				<div className="px-6 pt-7">
-					<p className="font-semibold text-(--em-gold-bright) text-[11px] uppercase tracking-[0.2em]">
+					<p className="font-semibold text-(--em-hero-accent) text-[11px] uppercase tracking-[0.2em]">
 						Pre-orders now open
 					</p>
 					<h1 className="mt-2 font-medium text-[2rem] leading-[1.1]">
 						Bring it home{" "}
-						<span className="text-(--em-gold-bright) italic">before</span> it
+						<span className="text-(--em-hero-accent) italic">before</span> it
 						lands.
 					</h1>
-					<p className="mt-3 text-sm text-white/75">
+					<p className="mt-3 text-sm opacity-75">
 						Order from our next shipment. Pay for the item today, and the
 						shipping when it arrives.
 					</p>
 					<div className="mt-5 flex gap-2">
 						<Link
 							href={"/prototype/storefront?variant=B" as Route}
-							className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-(--em-gold) px-4 py-2.5 font-semibold text-(--em-purple-deep) text-sm"
+							className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-(--em-hero-cta-bg) px-4 py-2.5 font-semibold text-(--em-hero-cta-ink) text-sm"
 						>
 							Shop Pre-orders <ArrowRight className="size-4" />
 						</Link>
 						<Link
 							href={"/prototype/storefront?variant=C" as Route}
-							className="whitespace-nowrap rounded-full border border-white/30 px-4 py-2.5 text-sm"
+							className="whitespace-nowrap rounded-full border border-current/30 px-4 py-2.5 text-sm"
 						>
 							In stock now
 						</Link>
@@ -403,7 +403,7 @@ export function BrowseD() {
 							label={false}
 							className="absolute inset-x-10 bottom-0 h-40 rounded-t-[2rem]"
 						/>
-						<span className="absolute right-6 bottom-4 rounded-full bg-white px-3 py-1 font-semibold text-(--em-purple) text-xs shadow-lg">
+						<span className="absolute right-6 bottom-4 rounded-full bg-card px-3 py-1 font-semibold text-(--em-link) text-xs shadow-lg">
 							{featured.name} · closes in{" "}
 							{daysLeft(featured.window?.closes ?? "")}d
 						</span>
@@ -411,7 +411,7 @@ export function BrowseD() {
 				)}
 			</section>
 			<div className="mt-3 flex justify-center gap-1.5">
-				<span className="h-1.5 w-5 rounded-full bg-(--em-purple)" />
+				<span className="h-1.5 w-5 rounded-full bg-primary" />
 				<span className="size-1.5 rounded-full bg-border" />
 				<span className="size-1.5 rounded-full bg-border" />
 			</div>
@@ -444,10 +444,12 @@ export function BrowseD() {
 								key={c}
 								href={"/prototype/storefront?variant=A" as Route}
 								className="relative h-36 w-32 shrink-0 overflow-hidden rounded-2xl p-3"
-								style={{ background: `oklch(0.95 0.035 ${hue})` }}
+								style={{
+									background: `oklch(var(--em-tile-l) var(--em-tile-c) ${hue})`,
+								}}
 							>
 								<p className="font-semibold text-sm">{c}</p>
-								<p className="mt-0.5 flex items-center gap-1 text-(--em-purple) text-[11px]">
+								<p className="mt-0.5 flex items-center gap-1 text-(--em-link) text-[11px]">
 									Shop now <ArrowRight className="size-3" />
 								</p>
 								{p && (
@@ -469,7 +471,7 @@ export function BrowseD() {
 					<h2 className="display font-medium text-xl">Closing soon</h2>
 					<Link
 						href={"/prototype/storefront?variant=B" as Route}
-						className="flex items-center gap-1 font-semibold text-(--em-purple) text-xs"
+						className="flex items-center gap-1 font-semibold text-(--em-link) text-xs"
 					>
 						View all <ArrowRight className="size-3" />
 					</Link>
@@ -491,7 +493,7 @@ export function BrowseD() {
 										className="aspect-square"
 									/>
 									<span
-										className={`absolute top-2 left-2 rounded-full px-2 py-0.5 font-semibold text-[10px] ${d <= 7 ? "bg-(--em-purple) text-white" : "bg-(--em-gold) text-(--em-purple-deep)"}`}
+										className={`absolute top-2 left-2 rounded-full px-2 py-0.5 font-semibold text-[10px] ${d <= 7 ? "bg-(--em-badge-hot-bg) text-(--em-badge-hot-ink)" : "bg-(--em-badge-warm-bg) text-(--em-badge-warm-ink)"}`}
 									>
 										{d} days left
 									</span>
@@ -512,8 +514,8 @@ export function BrowseD() {
 			</section>
 
 			{/* How it works band */}
-			<section className="mx-4 mt-8 rounded-3xl bg-(--em-purple-deep) p-6 text-white">
-				<p className="font-semibold text-(--em-gold-bright) text-[11px] uppercase tracking-[0.2em]">
+			<section className="mx-4 mt-8 rounded-3xl bg-(--em-band-bg) p-6 text-(--em-band-ink)">
+				<p className="font-semibold text-(--em-band-accent) text-[11px] uppercase tracking-[0.2em]">
 					How Pre-order works
 				</p>
 				<ol className="mt-4 space-y-3">
@@ -526,12 +528,12 @@ export function BrowseD() {
 						["Pay shipping, then collect", "Pick it up or have it delivered."],
 					].map(([t, sub], i) => (
 						<li key={t} className="flex gap-3">
-							<span className="display font-medium text-(--em-gold-bright) text-2xl leading-none">
+							<span className="display font-medium text-(--em-band-accent) text-2xl leading-none">
 								{i + 1}
 							</span>
 							<div>
 								<p className="font-semibold text-sm">{t}</p>
-								<p className="text-white/65 text-xs">{sub}</p>
+								<p className="text-xs opacity-65">{sub}</p>
 							</div>
 						</li>
 					))}
@@ -561,7 +563,7 @@ export function BrowseD() {
 											className={`aspect-square ${soldOut ? "opacity-50 grayscale" : ""}`}
 										/>
 										<span
-											className={`absolute top-2 left-2 rounded-full px-2 py-0.5 font-semibold text-[10px] ${soldOut ? "bg-muted text-muted-foreground" : isPreorderOpen(p) ? "bg-(--em-gold) text-(--em-purple-deep)" : "bg-(--em-purple) text-white"}`}
+											className={`absolute top-2 left-2 rounded-full px-2 py-0.5 font-semibold text-[10px] ${soldOut ? "bg-muted text-muted-foreground" : isPreorderOpen(p) ? "bg-(--em-badge-warm-bg) text-(--em-badge-warm-ink)" : "bg-(--em-badge-hot-bg) text-(--em-badge-hot-ink)"}`}
 										>
 											{soldOut
 												? "SOLD OUT"
@@ -592,14 +594,14 @@ export function BrowseD() {
 			</section>
 
 			{/* SMS sign-up */}
-			<section className="mx-4 mt-8 rounded-3xl bg-(--em-gold-soft) p-5">
-				<p className="display font-medium text-(--em-purple-deep) text-lg">
+			<section className="mx-4 mt-8 rounded-3xl bg-(--em-promo-bg) p-5">
+				<p className="display font-medium text-(--em-promo-ink) text-lg">
 					Hear when a new window opens
 				</p>
-				<p className="text-(--em-gold-ink) text-xs">
+				<p className="text-(--em-promo-sub) text-xs">
 					One SMS per drop. No spam.
 				</p>
-				<div className="mt-3 flex overflow-hidden rounded-full border border-(--em-gold)/40 bg-white">
+				<div className="mt-3 flex overflow-hidden rounded-full border border-(--em-gold)/40 bg-card">
 					<input
 						placeholder="024 000 0000"
 						className="min-w-0 flex-1 bg-transparent px-4 text-sm outline-none"
@@ -607,7 +609,7 @@ export function BrowseD() {
 					<button
 						type="button"
 						onClick={() => stub("subscribe this number to SMS")}
-						className="bg-(--em-purple) px-5 py-2.5 font-semibold text-white text-xs"
+						className="bg-primary px-5 py-2.5 font-semibold text-primary-foreground text-xs"
 					>
 						Notify me
 					</button>
@@ -615,24 +617,24 @@ export function BrowseD() {
 			</section>
 
 			{/* Footer */}
-			<footer className="mt-10 bg-(--em-purple-deep) px-6 pt-8 pb-36 text-white/70 text-xs">
-				<p className="display font-semibold text-white text-xl">Emblish</p>
+			<footer className="mt-10 bg-(--em-band-bg) px-6 pt-8 pb-36 text-(--em-band-ink)/70 text-xs">
+				<p className="em-wordmark text-(--em-band-accent) text-xl">EMBLISH</p>
 				<p className="mt-1">Pre-order what you love. We bring it home.</p>
 				<div className="mt-6 grid grid-cols-2 gap-6">
 					<div className="space-y-1.5">
-						<p className="font-semibold text-(--em-gold-bright)">Shop</p>
+						<p className="font-semibold text-(--em-band-accent)">Shop</p>
 						<p>Pre-orders</p>
 						<p>In stock</p>
 						<p>Categories</p>
 					</div>
 					<div className="space-y-1.5">
-						<p className="font-semibold text-(--em-gold-bright)">Help</p>
+						<p className="font-semibold text-(--em-band-accent)">Help</p>
 						<p>My orders</p>
 						<p>Pickup &amp; Delivery</p>
 						<p>FAQs</p>
 					</div>
 				</div>
-				<p className="mt-8 text-white/40">© 2026 Emblish</p>
+				<p className="mt-8 opacity-50">© 2026 Emblish</p>
 			</footer>
 		</div>
 	);

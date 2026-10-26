@@ -1,6 +1,8 @@
-/* PROTOTYPE — Emblish brand skin for the Storefront prototype only (wayfinder #12).
+/* PROTOTYPE — Emblish brand skin for the Storefront prototype only (wayfinder #12, #18).
    Re-points the shadcn tokens inside .em so existing utility classes pick up the brand,
-   and forces a light page like the visual references, whatever the system theme. */
+   and forces a light page like the visual references, whatever the system theme.
+   #18 adds role tokens (hero, band, header, tiles, wordmark) so a direction can re-skin
+   the Home by overriding variables alone. Defaults below are the #12 provisional skin. */
 
 .em {
 	color-scheme: light;
@@ -13,6 +15,36 @@
 	--em-gold-soft: #fbf3e0;
 	--em-gold-ink: #6b4a0b;
 	--em-ink: #1f1430;
+
+	--em-header-bg: transparent;
+	--em-header-ink: var(--em-purple);
+	--em-wordmark: var(--em-purple);
+	--em-hero-bg: linear-gradient(
+		135deg,
+		var(--em-purple-deep),
+		var(--em-purple) 55%,
+		#6b2fa0
+	);
+	--em-hero-ink: #ffffff;
+	--em-hero-accent: var(--em-gold-bright);
+	--em-hero-cta-bg: var(--em-gold);
+	--em-hero-cta-ink: var(--em-purple-deep);
+	--em-band-bg: var(--em-purple-deep);
+	--em-band-ink: #ffffff;
+	--em-band-accent: var(--em-gold-bright);
+	--em-tile-l: 0.95;
+	--em-tile-c: 0.035;
+	--em-badge-hot-bg: var(--em-purple);
+	--em-badge-hot-ink: #ffffff;
+	--em-badge-warm-bg: var(--em-gold);
+	--em-badge-warm-ink: var(--em-purple-deep);
+	--em-link: var(--em-purple);
+	--em-promo-bg: var(--em-gold-soft);
+	--em-promo-ink: var(--em-purple-deep);
+	--em-promo-sub: var(--em-gold-ink);
+	--em-display-weight: 500;
+	--em-display-tracking: -0.01em;
+	--em-display-transform: none;
 
 	--background: #fcfaf6;
 	--foreground: var(--em-ink);
@@ -37,5 +69,13 @@
 .em h2.display,
 .em .display {
 	font-family: var(--font-em-display), Georgia, serif;
-	letter-spacing: -0.01em;
+	font-weight: var(--em-display-weight);
+	letter-spacing: var(--em-display-tracking);
+	text-transform: var(--em-display-transform);
+}
+
+.em .em-wordmark {
+	font-family: var(--font-em-wordmark, var(--font-em-display)), Georgia, serif;
+	font-weight: 700;
+	letter-spacing: 0.08em;
 }
