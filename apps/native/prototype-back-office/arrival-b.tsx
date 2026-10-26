@@ -63,7 +63,7 @@ export default function ArrivalB({ role }: { role: Role }) {
 
 // ---------------------------------------------------------------- arrivals list
 
-function ArrivalsList({ onOpen }: { onOpen: (id: string) => void }) {
+export function ArrivalsList({ onOpen }: { onOpen: (id: string) => void }) {
   const { products, windows } = useBO();
   const s = useArrivals();
   const list = windows.filter((w) => !w.draft && STAGES.indexOf(w.stage) >= 2);
@@ -121,7 +121,7 @@ function ArrivalsList({ onOpen }: { onOpen: (id: string) => void }) {
 
 const STEPS = ["Count", "Check", "Fee", "Issue"];
 
-function Wizard({ windowId, role, onClose }: { windowId: string; role: Role; onClose: () => void }) {
+export function Wizard({ windowId, role, onClose }: { windowId: string; role: Role; onClose: () => void }) {
   const { products, windows } = useBO();
   const s = useArrivals();
   const w = windows.find((x) => x.id === windowId)!;
@@ -377,7 +377,7 @@ function Big({ label, value }: { label: string; value: string }) {
 
 type Filter = "action" | "unpaid" | "forfeit" | "paid" | "refunds" | "void";
 
-function Inbox({ role }: { role: Role }) {
+export function Inbox({ role }: { role: Role }) {
   const s = useArrivals();
   const { products, windows } = useBO();
   const [filter, setFilter] = useState<Filter>("action");
