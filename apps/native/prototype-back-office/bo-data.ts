@@ -1,4 +1,4 @@
-// PROTOTYPE (wayfinder #15): in-memory Back Office data. Throwaway, never merged.
+// PROTOTYPE (wayfinder #15, extended for #16): in-memory Back Office data. Throwaway, never merged.
 // Money is integer pesewas, as decided in "Catalog model". Nothing persists.
 import { useSyncExternalStore } from "react";
 
@@ -236,7 +236,7 @@ const windows: OrderWindow[] = [
       { variantId: "s3", preorderPrice: 45000, ordered: 4, storeQuantity: 0 },
     ],
     shippingFeeEstimate: 2500,
-    preorders: 21,
+    preorders: 12,
     stage: "In transit",
     expectedFrom: "2026-11-03",
     expectedTo: "2026-11-10",
@@ -244,8 +244,50 @@ const windows: OrderWindow[] = [
     history: [
       { stage: "Open", at: "2026-09-01", by: ME.owner },
       { stage: "Closed", at: "2026-09-21", by: "System" },
-      { stage: "Ordered from supplier", at: "2026-09-24", by: ME.staff, expectedFrom: "2026-10-30", expectedTo: "2026-11-10", smsTo: 21 },
-      { stage: "In transit", at: "2026-10-14", by: ME.staff, expectedFrom: "2026-11-03", expectedTo: "2026-11-10", note: "Container left Guangzhou on 14 Oct.", smsTo: 21 },
+      { stage: "Ordered from supplier", at: "2026-09-24", by: ME.staff, expectedFrom: "2026-10-30", expectedTo: "2026-11-10", smsTo: 12 },
+      { stage: "In transit", at: "2026-10-14", by: ME.staff, expectedFrom: "2026-11-03", expectedTo: "2026-11-10", note: "Container left Guangzhou on 14 Oct.", smsTo: 12 },
+    ],
+  },
+  {
+    id: "ow_tote1",
+    productId: "p_tote",
+    number: 1,
+    opensAt: "2026-07-01",
+    closesAt: "2026-07-21",
+    offers: [
+      { variantId: "v1", preorderPrice: 28000, ordered: 5, storeQuantity: 2 },
+      { variantId: "v3", preorderPrice: 28000, ordered: 3, storeQuantity: 1 },
+    ],
+    shippingFeeEstimate: 1500,
+    preorders: 6,
+    stage: "Arrived",
+    history: [
+      { stage: "Open", at: "2026-07-01", by: ME.owner },
+      { stage: "Closed", at: "2026-07-21", by: "System" },
+      { stage: "Ordered from supplier", at: "2026-07-23", by: ME.staff, smsTo: 6 },
+      { stage: "In transit", at: "2026-08-20", by: ME.staff, smsTo: 6 },
+      { stage: "Arrived", at: "2026-09-18", by: ME.staff, smsTo: 6 },
+    ],
+  },
+  {
+    id: "ow_tote2",
+    productId: "p_tote",
+    number: 2,
+    opensAt: "2026-08-10",
+    closesAt: "2026-08-31",
+    offers: [
+      { variantId: "v1", preorderPrice: 29000, ordered: 6, storeQuantity: 2 },
+      { variantId: "v3", preorderPrice: 29000, ordered: 4, storeQuantity: 0 },
+    ],
+    shippingFeeEstimate: 1500,
+    preorders: 7,
+    stage: "Arrived",
+    history: [
+      { stage: "Open", at: "2026-08-10", by: ME.owner },
+      { stage: "Closed", at: "2026-08-31", by: "System" },
+      { stage: "Ordered from supplier", at: "2026-09-02", by: ME.staff, smsTo: 7 },
+      { stage: "In transit", at: "2026-09-25", by: ME.staff, smsTo: 7 },
+      { stage: "Arrived", at: "2026-10-12", by: ME.staff, smsTo: 7 },
     ],
   },
   {
