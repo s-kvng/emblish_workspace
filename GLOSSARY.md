@@ -91,7 +91,7 @@ The first payment on a Pre-order, covering the full price of the goods.
 _Avoid_: Deposit, down payment, first payment, pre-order fee
 
 **Shipping Fee**:
-The second payment on a Pre-order, charged per arrived unit once the goods have arrived. An estimate may be shown when the Pre-order is placed; the amount charged is confirmed by Staff on arrival.
+The second payment on a Pre-order, charged per arrived unit once the goods have arrived. An estimate, set per Order Window, may be shown when the Pre-order is placed; the amount charged is confirmed by Staff on arrival.
 _Avoid_: Top-up, balance, second payment
 
 **Delivery Fee**:
@@ -99,12 +99,16 @@ The charge for delivering a Pre-order's or Store Order's goods to a Customer who
 _Avoid_: Courier fee, dispatch fee
 
 **Minimum Order Quantity**:
-The fewest units of a Pre-order Product a single Pre-order may contain; optional, set per product.
+The fewest units of a Pre-order Product a single Pre-order may contain, counted across its Variants; optional, set per Order Window so it can change from one window to the next.
 _Avoid_: MOQ (in customer-facing text), minimum batch
 
 **Shipping Fee Invoice**:
 The request sent to a customer to pay the Shipping Fee.
 _Avoid_: Shipping bill, balance invoice
+
+**Delivery Fee Invoice**:
+The request sent to a Customer to pay a Delivery Fee that was not billed on a Shipping Fee Invoice, such as a quote for "Elsewhere in Ghana" or the extra owed after switching to a dearer Delivery Zone. Leaving one unpaid never leads to a Forfeit.
+_Avoid_: Delivery bill, courier invoice
 
 **Receipt**:
 The confirmation a customer receives after a payment succeeds, one per payment, listing what it paid for under each order it covers. An invoice requests money not yet paid; a Receipt confirms money received.
@@ -113,6 +117,10 @@ _Avoid_: Invoice (for a payment already made), proof of payment
 **Forfeit**:
 Staff ending a Pre-order whose Shipping Fee Invoice has gone unpaid long past its due date; the goods are released to stock and the Item Payment is not automatically refunded.
 _Avoid_: Abandon, expire, write off
+
+**Refund**:
+Money the Owner returns to a Customer from one of their payments, for a reason such as a Shortfall, a cancellation, a late payment that could not be filled, or a cheaper Delivery Zone.
+_Avoid_: Reversal, credit, chargeback
 
 **Shortfall**:
 Units ordered in an Order Window that never arrive; the affected Pre-orders are refunded for the missing units, earliest-placed Pre-orders being filled first.
@@ -139,7 +147,7 @@ A short code sent to the Customer by SMS when goods are ready for Pickup, given 
 _Avoid_: Collection code, OTP, PIN
 
 **Delivery Zone**:
-An area the company delivers to, with a flat Delivery Fee set by Staff; "Elsewhere in Ghana" is a zone whose fee Staff quote per order.
+An area the company delivers to, with a flat Delivery Fee set by the Owner; "Elsewhere in Ghana" is a zone whose fee Staff quote per order.
 _Avoid_: Region, area, delivery band
 
 ## Notifications
