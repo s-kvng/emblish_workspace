@@ -141,3 +141,13 @@ _Avoid_: Collection code, OTP, PIN
 **Delivery Zone**:
 An area the company delivers to, with a flat Delivery Fee set by Staff; "Elsewhere in Ghana" is a zone whose fee Staff quote per order.
 _Avoid_: Region, area, delivery band
+
+## Notifications
+
+**Window Alert**:
+An SMS telling Alert Subscribers that new Pre-orders have opened, sent when Staff announce one or more Order Windows. It is the only marketing message the company sends.
+_Avoid_: Newsletter, broadcast, promo SMS
+
+**Alert Subscriber**:
+A phone number that has confirmed it wants Window Alerts. An Alert Subscriber may or may not also be a Customer, and can unsubscribe at any time.
+_Avoid_: Subscriber (alone), lead, mailing list member
