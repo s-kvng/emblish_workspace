@@ -1,82 +1,53 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "@emblish_workspace/brand/tokens.css";
 @source "../../../apps/**/*.{ts,tsx}";
 @source "../**/*.{ts,tsx}";
 
+/* Light theme only in v1 (#18): nothing sets .dark, so dark: utilities never apply. */
 @custom-variant dark (&:is(.dark *));
 
+/* shadcn variables mapped onto the Royal & Warm brand tokens. */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.58 0.22 27);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.809 0.105 251.813);
-  --chart-2: oklch(0.623 0.214 259.815);
-  --chart-3: oklch(0.546 0.245 262.881);
-  --chart-4: oklch(0.488 0.243 264.376);
-  --chart-5: oklch(0.424 0.199 265.638);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-}
-
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.87 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.371 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.809 0.105 251.813);
-  --chart-2: oklch(0.623 0.214 259.815);
-  --chart-3: oklch(0.546 0.245 262.881);
-  --chart-4: oklch(0.488 0.243 264.376);
-  --chart-5: oklch(0.424 0.199 265.638);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --background: var(--color-brand-ivory);
+  --foreground: var(--color-brand-ink);
+  --card: var(--color-brand-card);
+  --card-foreground: var(--color-brand-ink);
+  --popover: var(--color-brand-card);
+  --popover-foreground: var(--color-brand-ink);
+  --primary: var(--color-brand-purple);
+  --primary-foreground: var(--color-brand-card);
+  --secondary: var(--color-brand-purple-mist);
+  --secondary-foreground: var(--color-brand-purple);
+  --muted: var(--color-brand-muted);
+  --muted-foreground: var(--color-brand-ink-muted);
+  --accent: var(--color-brand-purple-mist);
+  --accent-foreground: var(--color-brand-purple);
+  --destructive: var(--color-brand-danger);
+  --border: var(--color-brand-border);
+  --input: var(--color-brand-border);
+  --ring: var(--color-brand-purple);
+  --chart-1: var(--color-brand-purple);
+  --chart-2: var(--color-brand-gold);
+  --chart-3: var(--color-brand-purple-deep);
+  --chart-4: var(--color-brand-gold-bright);
+  --chart-5: var(--color-brand-ink-muted);
+  --radius: 1rem;
+  --sidebar: var(--color-brand-card);
+  --sidebar-foreground: var(--color-brand-ink);
+  --sidebar-primary: var(--color-brand-purple);
+  --sidebar-primary-foreground: var(--color-brand-card);
+  --sidebar-accent: var(--color-brand-purple-mist);
+  --sidebar-accent-foreground: var(--color-brand-purple);
+  --sidebar-border: var(--color-brand-border);
+  --sidebar-ring: var(--color-brand-purple);
 }
 
 @theme inline {
-  --font-sans: "Inter Variable", sans-serif;
+  /* Fraunces and Plus Jakarta Sans are loaded by next/font in the app layout. */
+  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-fraunces), Georgia, serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -126,5 +97,21 @@
   }
   html {
     @apply font-sans;
+    color-scheme: light;
   }
+  /* Display type for headings; use font-display for the hero and big numbers. */
+  h1,
+  h2,
+  h3 {
+    @apply font-display font-medium tracking-[-0.01em];
+  }
+}
+
+/* Eyebrow labels: small gold uppercase above a heading. */
+@utility eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--color-brand-gold-ink);
 }

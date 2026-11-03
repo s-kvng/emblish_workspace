@@ -1,0 +1,19 @@
+{
+  "name": "@emblish_workspace/brand",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./tokens": "./src/tokens.ts",
+    "./tokens.css": "./src/tokens.css"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@emblish_workspace/config": "workspace:*",
+    "@types/bun": "^1.3.14",
+    "typescript": "^6.0.3"
+  }
+}

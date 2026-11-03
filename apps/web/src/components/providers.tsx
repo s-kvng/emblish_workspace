@@ -7,7 +7,6 @@ import { ConvexReactClient } from "convex/react";
 import { authClient } from "@/lib/auth-client";
 
 import { ENV } from "../env";
-import { ThemeProvider } from "./theme-provider";
 
 const convex = new ConvexReactClient(ENV.NEXT_PUBLIC_CONVEX_URL);
 
@@ -19,11 +18,11 @@ export default function Providers({
   initialToken?: string | null;
 }) {
   return (
-    <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+    <>
       <ConvexBetterAuthProvider client={convex} authClient={authClient} initialToken={initialToken}>
         {children}
       </ConvexBetterAuthProvider>
-      <Toaster richColors />
-    </ThemeProvider>
+      <Toaster theme="light" richColors />
+    </>
   );
 }

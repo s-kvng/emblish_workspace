@@ -1,14 +1,15 @@
+import { brand } from "@emblish_workspace/brand/tokens";
 import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "emblish_workspace",
-    short_name: "emblish_workspace",
-    description: "my pwa app",
+    name: "Emblish",
+    short_name: "Emblish",
+    description: "Pre-order what you love. We bring it home.",
     start_url: "/",
     display: "standalone",
-    background_color: "#ffffff",
-    theme_color: "#000000",
+    background_color: brand.ivory,
+    theme_color: brand.purple,
     icons: [
       {
         src: "/favicon/web-app-manifest-192x192.png",
