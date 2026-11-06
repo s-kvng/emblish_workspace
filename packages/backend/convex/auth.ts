@@ -1,6 +1,7 @@
 import { expo } from "@better-auth/expo";
 import { createClient, type GenericCtx } from "@convex-dev/better-auth";
 import { convex, crossDomain } from "@convex-dev/better-auth/plugins";
+import { requireActionCtx } from "@convex-dev/better-auth/utils";
 import { APIError } from "better-auth/api";
 import { type BetterAuthOptions, betterAuth } from "better-auth/minimal";
 
@@ -10,7 +11,8 @@ import authConfig from "./auth.config";
 import authSchema from "./betterAuth/schema";
 
 const siteUrl = process.env.SITE_URL!;
-const nativeAppUrl = process.env.NATIVE_APP_URL || "emblish_workspace://";
+/** Where email links land in the Back Office app. */
+export const nativeAppUrl = process.env.NATIVE_APP_URL || "emblish-back-office://";
 
 export const authComponent = createClient<DataModel, typeof authSchema>(components.betterAuth, {
   local: { schema: authSchema },
@@ -26,6 +28,14 @@ export function createAuthOptions(ctx: GenericCtx<DataModel>) {
       enabled: true,
       disableSignUp: true,
       requireEmailVerification: false,
+      // A reset link is emailed to active Staff only; it signs them out everywhere once used.
+      sendResetPassword: async ({ user, url }) => {
+        await requireActionCtx(ctx).runMutation(internal.system.staff.emailPasswordReset, {
+          authUserId: user.id,
+          link: url,
+        });
+      },
+      revokeSessionsOnPasswordReset: true,
     },
     user: {
       additionalFields: {

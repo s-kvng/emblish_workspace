@@ -1,29 +1,26 @@
 import { useForm } from "@tanstack/react-form";
+import { Link, useLocalSearchParams } from "expo-router";
 import { Button, FieldError, Input, type InputRef, Label, Spinner, TextField } from "heroui-native";
 import { useRef, useState } from "react";
-import { Image, Text, View } from "react-native";
-import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Text } from "react-native";
 import z from "zod";
 
+import { AuthScreen } from "@/components/auth-screen";
 import { authClient } from "@/lib/auth-client";
-
-const emblem = require("@/assets/images/emblem.png");
+import { firstIssue } from "@/lib/form-errors";
 
 const signInSchema = z.object({
   email: z.string().trim().min(1, "Enter your email").email("Enter a valid email address"),
   password: z.string().min(1, "Enter your password"),
 });
 
-function firstIssue(error: unknown): string | null {
-  if (Array.isArray(error)) return firstIssue(error[0]);
-  if (error && typeof error === "object" && "message" in error) return String(error.message);
-  return null;
-}
+const notices = {
+  "password-reset": "Your password is changed. Sign in with the new one.",
+} as const;
 
-/** Staff sign in with the email and password their Owner set up; there is no sign-up. */
+/** Staff sign in with the email and password they set up from their invitation; there is no sign-up. */
 export default function SignIn() {
-  const insets = useSafeAreaInsets();
+  const { notice } = useLocalSearchParams<{ notice?: keyof typeof notices }>();
   const passwordInputRef = useRef<InputRef>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
 
@@ -48,19 +45,7 @@ export default function SignIn() {
   });
 
   return (
-    <KeyboardAwareScrollView
-      className="flex-1 bg-background"
-      contentContainerClassName="grow"
-      keyboardShouldPersistTaps="handled"
-    >
-      <View className="bg-brand-purple-deep px-4 pb-8" style={{ paddingTop: insets.top + 32 }}>
-        <Image source={emblem} className="size-10" accessibilityIgnoresInvertColors />
-        <Text className="mt-4 font-sans-semibold text-brand-gold-bright text-xs uppercase tracking-[2px]">
-          Back Office
-        </Text>
-        <Text className="mt-1 font-display text-[32px] text-white leading-tight">Sign in</Text>
-      </View>
-
+    <AuthScreen title="Sign in">
       <form.Subscribe
         selector={(state) => ({
           isSubmitting: state.isSubmitting,
@@ -71,7 +56,12 @@ export default function SignIn() {
           const message = validationError ?? refusal;
 
           return (
-            <View className="gap-4 p-4">
+            <>
+              {notice && notices[notice] && !message ? (
+                <Text className="font-sans-medium text-brand-success text-sm">
+                  {notices[notice]}
+                </Text>
+              ) : null}
               <FieldError isInvalid={!!message}>{message}</FieldError>
 
               <form.Field name="email">
@@ -123,13 +113,19 @@ export default function SignIn() {
                 )}
               </Button>
 
+              <Link href="/forgot-password" asChild>
+                <Button variant="ghost">
+                  <Button.Label>Forgot password?</Button.Label>
+                </Button>
+              </Link>
+
               <Text className="text-center font-sans text-muted text-xs">
                 New Staff are invited by an Owner.
               </Text>
-            </View>
+            </>
           );
         }}
       </form.Subscribe>
-    </KeyboardAwareScrollView>
+    </AuthScreen>
   );
 }

@@ -2,9 +2,9 @@ import { v } from "convex/values";
 
 import { internal } from "../_generated/api";
 import { internalAction, internalMutation, internalQuery } from "../_generated/server";
-import { createAuth } from "../auth";
+import { createStaffAuthUser } from "../model/authUsers";
 import { seedSettings } from "../model/settings";
-import { hasAnyStaff, insertFirstOwner } from "../model/staff";
+import { hasAnyStaff, insertFirstOwner, normalizeEmail } from "../model/staff";
 
 /**
  * Creates the first Owner and seeds `settings`, once, on a fresh deployment.
@@ -18,41 +18,22 @@ export const firstOwner = internalAction({
       throw new Error("Staff already exist, so the first Owner is already bootstrapped.");
     }
 
-    const email = args.email.trim().toLowerCase();
+    const email = normalizeEmail(args.email);
     const name = args.name.trim();
-    const auth = await createAuth(ctx).$context;
-    const { minPasswordLength, maxPasswordLength } = auth.password.config;
-    if (args.password.length < minPasswordLength || args.password.length > maxPasswordLength) {
-      throw new Error(
-        `The password must be ${minPasswordLength} to ${maxPasswordLength} characters long.`,
-      );
-    }
-    if (await auth.internalAdapter.findUserByEmail(email)) {
-      throw new Error(`${email} is already signed up.`);
-    }
-
-    // Public sign-up is off, so the user and its password are created directly.
-    const user = await auth.internalAdapter.createUser({
+    const { authUserId, remove } = await createStaffAuthUser(ctx, {
       email,
       name,
-      emailVerified: true,
-      kind: "staff",
+      password: args.password,
     });
     try {
-      await auth.internalAdapter.linkAccount({
-        userId: user.id,
-        providerId: "credential",
-        accountId: user.id,
-        password: await auth.password.hash(args.password),
-      });
       await ctx.runMutation(internal.system.bootstrap.insertOwnerAndSettings, {
-        authUserId: user.id,
+        authUserId,
         email,
         name,
       });
     } catch (error) {
       // Leave nothing behind that would block a retry with the same email.
-      await auth.internalAdapter.deleteUser(user.id);
+      await remove();
       throw error;
     }
     return null;

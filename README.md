@@ -57,6 +57,17 @@ bunx convex run system/bootstrap:firstOwner '{"email":"owner@example.com","passw
 
 Add `--prod` to target production. It refuses to run once any Staff member exists. The password lands in your shell history, so clear that entry afterwards.
 
+### Staff email
+
+Staff invitations and password reset links are emailed through [Resend](https://resend.com). Set these on the Convex deployment, from `packages/backend`:
+
+```bash
+bunx convex env set RESEND_API_KEY re_...
+bunx convex env set EMAIL_FROM "Emblish <no-reply@your-verified-domain>"
+```
+
+Email links open the Back Office app through its URL scheme, `emblish-back-office://`. To point them somewhere else (such as Expo Go's `exp://` URL during development), set `NATIVE_APP_URL` on the deployment, with its trailing `://` or `/`.
+
 Backend tests (`bun run test`) run in convex-test. After changing the Better Auth options, regenerate `convex/betterAuth/schema.ts` as its header describes.
 
 ## UI Customization

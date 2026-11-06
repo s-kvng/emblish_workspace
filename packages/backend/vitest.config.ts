@@ -7,6 +7,9 @@ export default defineConfig({
     env: {
       SITE_URL: "http://localhost:3001",
       BETTER_AUTH_SECRET: "test-secret-at-least-thirty-two-characters-long",
+      CONVEX_SITE_URL: "https://emblish-test.convex.site",
+      RESEND_API_KEY: "re_test",
+      EMAIL_FROM: "Emblish <no-reply@emblish.test>",
     },
   },
 });

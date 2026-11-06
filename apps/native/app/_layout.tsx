@@ -33,7 +33,7 @@ const convex = new ConvexReactClient(ENV.EXPO_PUBLIC_CONVEX_URL, {
   unsavedChangesWarning: false,
 });
 
-/** Signed-in Staff get the tabs; everyone else only the sign-in screen. */
+/** Signed-in Staff get the tabs; everyone else only the signed-out screens. */
 function StackLayout() {
   const { isLoading, isAuthenticated } = useConvexAuth();
 
@@ -47,9 +47,14 @@ function StackLayout() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Protected guard={isAuthenticated}>
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="staff" />
       </Stack.Protected>
       <Stack.Protected guard={!isAuthenticated}>
         <Stack.Screen name="sign-in" />
+        <Stack.Screen name="forgot-password" />
+        {/* Opened from email links, which land here through the app's URL scheme. */}
+        <Stack.Screen name="accept-invite" />
+        <Stack.Screen name="reset-password" />
       </Stack.Protected>
     </Stack>
   );
