@@ -1,3 +1,63 @@
 @import "tailwindcss";
 @import "uniwind";
 @import "heroui-native/styles";
+@import "@emblish_workspace/brand/tokens.css";
+
+/* React Native needs one family per weight; these are the names expo-google-fonts
+   registers, loaded in app/_layout.tsx. */
+@theme {
+  --font-sans: "PlusJakartaSans_400Regular";
+  --font-sans-medium: "PlusJakartaSans_500Medium";
+  --font-sans-semibold: "PlusJakartaSans_600SemiBold";
+  --font-sans-bold: "PlusJakartaSans_700Bold";
+  --font-display: "Fraunces_500Medium";
+  --font-display-italic: "Fraunces_500Medium_Italic";
+}
+
+/* HeroUI Native variables mapped onto the Royal & Warm brand tokens.
+   Light theme only in v1 (#18): the app pins Uniwind to light. */
+@layer theme {
+  :root {
+    @variant light {
+      --background: var(--color-brand-ivory-screen);
+      --foreground: var(--color-brand-ink);
+
+      --surface: var(--color-brand-card);
+      --surface-foreground: var(--color-brand-ink);
+      --surface-secondary: var(--color-brand-muted);
+      --surface-secondary-foreground: var(--color-brand-ink);
+      --surface-tertiary: var(--color-brand-border);
+      --surface-tertiary-foreground: var(--color-brand-ink);
+
+      --overlay: var(--color-brand-card);
+      --overlay-foreground: var(--color-brand-ink);
+
+      --muted: var(--color-brand-ink-muted);
+
+      --default: var(--color-brand-muted);
+      --default-foreground: var(--color-brand-ink);
+
+      --accent: var(--color-brand-purple);
+      --accent-foreground: var(--color-brand-card);
+
+      --field-background: var(--color-brand-card);
+      --field-foreground: var(--color-brand-ink);
+      --field-placeholder: var(--color-brand-ink-muted);
+
+      --success: var(--color-brand-success);
+      --success-foreground: var(--color-brand-card);
+      --warning: var(--color-brand-gold);
+      --warning-foreground: var(--color-brand-purple-deep);
+      --danger: var(--color-brand-danger);
+      --danger-foreground: var(--color-brand-card);
+
+      --segment: var(--color-brand-card);
+      --segment-foreground: var(--color-brand-ink);
+
+      --border: var(--color-brand-border);
+      --separator: var(--color-brand-border);
+      --focus: var(--color-brand-purple);
+      --link: var(--color-brand-purple);
+    }
+  }
+}

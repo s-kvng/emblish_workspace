@@ -1,26 +1,28 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Fraunces, Plus_Jakarta_Sans } from "next/font/google";
 
 import "../index.css";
 
+import Footer from "@/components/footer";
 import Header from "@/components/header";
 import Providers from "@/components/providers";
 import PwaRegistration from "@/components/pwa-registration";
 import { getToken } from "@/lib/auth-server";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const fraunces = Fraunces({
+  variable: "--font-fraunces",
   subsets: ["latin"],
+  style: ["normal", "italic"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const jakarta = Plus_Jakarta_Sans({
+  variable: "--font-jakarta",
   subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
-  title: "emblish_workspace",
-  description: "emblish_workspace",
+  title: "Emblish",
+  description: "Pre-order what you love. We bring it home.",
 };
 
 export default async function RootLayout({
@@ -30,14 +32,15 @@ export default async function RootLayout({
 }>) {
   const token = await getToken();
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+    <html lang="en">
+      <body className={`${fraunces.variable} ${jakarta.variable} antialiased`}>
         <PwaRegistration />
 
         <Providers initialToken={token}>
-          <div className="grid grid-rows-[auto_1fr] h-svh">
+          <div className="grid min-h-svh grid-rows-[auto_1fr_auto]">
             <Header />
-            {children}
+            <main>{children}</main>
+            <Footer />
           </div>
         </Providers>
       </body>

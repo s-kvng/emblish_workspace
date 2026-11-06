@@ -42,7 +42,8 @@
     "env:generate": "varlock codegen --path ./apps/web/ && varlock codegen --path ./apps/native/",
     "postinstall": "varlock codegen --path ./apps/web/ && varlock codegen --path ./apps/native/",
     "check": "biome check --write .",
-    "prepare": "husky"
+    "prepare": "husky",
+    "test": "turbo run test"
   },
   "dependencies": {
     "zod": "catalog:"

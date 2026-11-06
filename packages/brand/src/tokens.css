@@ -1,0 +1,21 @@
+/* The Royal & Warm token set (#18). Keep in step with tokens.ts; tokens.test.ts checks it.
+   `static` emits every variable, so each app's theme can map onto them with var(). */
+@theme static {
+  --color-brand-purple: #4A1D6E;
+  --color-brand-purple-deep: #2A0F42;
+  --color-brand-purple-mist: #F3ECF9;
+  --color-brand-purple-glow: #6B2FA0;
+  --color-brand-gold: #C9962E;
+  --color-brand-gold-bright: #E7BE5C;
+  --color-brand-gold-mist: #FBF3E0;
+  --color-brand-gold-ink: #6B4A0B;
+  --color-brand-ivory: #FBF8F3;
+  --color-brand-ivory-screen: #F7F3EC;
+  --color-brand-card: #FFFFFF;
+  --color-brand-muted: #F4F0EA;
+  --color-brand-border: #ECE5DA;
+  --color-brand-ink: #1F1430;
+  --color-brand-ink-muted: #6E6478;
+  --color-brand-danger: #B4232C;
+  --color-brand-success: #1F7A4D;
+}

@@ -1,26 +1,71 @@
 import { expo } from "@better-auth/expo";
 import { createClient, type GenericCtx } from "@convex-dev/better-auth";
 import { convex, crossDomain } from "@convex-dev/better-auth/plugins";
-import { betterAuth } from "better-auth/minimal";
+import { requireActionCtx } from "@convex-dev/better-auth/utils";
+import { APIError } from "better-auth/api";
+import { type BetterAuthOptions, betterAuth } from "better-auth/minimal";
 
-import { components } from "./_generated/api";
+import { components, internal } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
-import { query } from "./_generated/server";
 import authConfig from "./auth.config";
+import authSchema from "./betterAuth/schema";
 
 const siteUrl = process.env.SITE_URL!;
-const nativeAppUrl = process.env.NATIVE_APP_URL || "emblish_workspace://";
+/** Where email links land in the Back Office app. */
+export const nativeAppUrl = process.env.NATIVE_APP_URL || "emblish-back-office://";
 
-export const authComponent = createClient<DataModel>(components.betterAuth);
+export const authComponent = createClient<DataModel, typeof authSchema>(components.betterAuth, {
+  local: { schema: authSchema },
+});
 
-function createAuth(ctx: GenericCtx<DataModel>) {
-  return betterAuth({
+export function createAuthOptions(ctx: GenericCtx<DataModel>) {
+  return {
     baseURL: siteUrl,
     trustedOrigins: [siteUrl, nativeAppUrl, "exp://"],
     database: authComponent.adapter(ctx),
+    // Email + password is for Staff only, who are bootstrapped or invited.
     emailAndPassword: {
       enabled: true,
+      disableSignUp: true,
       requireEmailVerification: false,
+      // A reset link is emailed to active Staff only; it signs them out everywhere once used.
+      sendResetPassword: async ({ user, url }) => {
+        await requireActionCtx(ctx).runMutation(internal.system.staff.emailPasswordReset, {
+          authUserId: user.id,
+          link: url,
+        });
+      },
+      revokeSessionsOnPasswordReset: true,
+    },
+    user: {
+      additionalFields: {
+        // Routes a person to the right app; the `staff` table decides permissions.
+        kind: {
+          type: "string",
+          required: true,
+          defaultValue: "customer",
+          input: false,
+        },
+      },
+    },
+    databaseHooks: {
+      session: {
+        create: {
+          before: async (session, endpoint) => {
+            // Email sign-in is the Back Office's door: only active Staff get through.
+            if (endpoint?.path !== "/sign-in/email") return;
+            const allowed = await ctx.runQuery(internal.system.staff.mayStartBackOfficeSession, {
+              authUserId: session.userId,
+            });
+            if (!allowed) {
+              throw new APIError("FORBIDDEN", {
+                code: "NOT_ACTIVE_STAFF",
+                message: "Only active Staff can sign in to the Back Office.",
+              });
+            }
+          },
+        },
+      },
     },
     plugins: [
       expo(),
@@ -30,14 +75,9 @@ function createAuth(ctx: GenericCtx<DataModel>) {
         jwksRotateOnTokenGenerationError: true,
       }),
     ],
-  });
+  } satisfies BetterAuthOptions;
 }
 
-export { createAuth };
-
-export const getCurrentUser = query({
-  args: {},
-  handler: async (ctx) => {
-    return await authComponent.safeGetAuthUser(ctx);
-  },
-});
+export function createAuth(ctx: GenericCtx<DataModel>) {
+  return betterAuth(createAuthOptions(ctx));
+}
