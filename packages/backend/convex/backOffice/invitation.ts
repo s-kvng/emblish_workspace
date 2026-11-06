@@ -6,8 +6,9 @@ import { createStaffAuthUser } from "../model/authUsers";
 import { findInvitation } from "../model/invitations";
 import { staffRole } from "../schema";
 
-// The only Back Office functions open to someone who isn't Staff yet: each
-// opens with the invitation token, standing in for `requireStaff`.
+// The only Back Office functions open to someone who isn't Staff yet, as ADR
+// 0001 allows: each opens with a check on the invitation token in place of
+// `requireStaff`, and a closed invitation gets nothing but why it's closed.
 
 /** What the invitation link leads to; the email and role show only while it's open. */
 export const lookup = query({
