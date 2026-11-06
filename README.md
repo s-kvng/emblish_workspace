@@ -47,6 +47,18 @@ Open [http://localhost:3001](http://localhost:3001) in your browser to see the w
 From `apps/native`, run the `ios` script for iOS or the `android` script for Android to build and launch the app. See [Expo development builds](https://docs.expo.dev/develop/development-builds/introduction/) for device setup.
 Your app will connect to the Convex cloud backend automatically.
 
+### The first Owner
+
+Nobody can sign up. On a fresh deployment, create the first Owner (who then invites other Staff) and seed the `settings` row once, from `packages/backend`:
+
+```bash
+bunx convex run system/bootstrap:firstOwner '{"email":"owner@example.com","password":"at-least-8-characters","name":"Owner Name"}'
+```
+
+Add `--prod` to target production. It refuses to run once any Staff member exists. The password lands in your shell history, so clear that entry afterwards.
+
+Backend tests (`bun run test`) run in convex-test. After changing the Better Auth options, regenerate `convex/betterAuth/schema.ts` as its header describes.
+
 ## UI Customization
 
 React web apps in this stack share shadcn/ui primitives through `packages/ui`.

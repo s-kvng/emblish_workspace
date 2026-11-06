@@ -6,7 +6,9 @@
   "author": "",
   "scripts": {
     "dev": "convex dev",
-    "dev:setup": "convex dev --configure --until-success"
+    "dev:setup": "convex dev --configure --until-success",
+    "test": "vitest run",
+    "check-types": "tsc --noEmit -p convex"
   },
   "dependencies": {
     "@better-auth/expo": "catalog:",
@@ -16,8 +18,13 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@edge-runtime/vm": "^5.0.0",
     "@emblish_workspace/config": "workspace:*",
     "@types/node": "catalog:",
-    "typescript": "^6.0.3"
-  }
+    "convex-test": "^0.0.67",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.5",
+    "vitest": "^5.1.0"
+  },
+  "type": "module"
 }

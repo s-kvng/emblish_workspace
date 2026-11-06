@@ -1,16 +1,20 @@
+import type { PropsWithChildren } from "react";
 import { Image, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const emblem = require("@/assets/images/emblem.png");
 
-type Props = {
+type Props = PropsWithChildren<{
   title: string;
   /** One plain sentence on what this tab will hold. */
   description: string;
-};
+}>;
 
-/** A Back Office tab that isn't built yet: the deep-purple header and a note. */
-export function PlaceholderScreen({ title, description }: Props) {
+/**
+ * A Back Office tab that isn't built yet: the deep-purple header, a note, and
+ * anything already built below it.
+ */
+export function PlaceholderScreen({ title, description, children }: Props) {
   const insets = useSafeAreaInsets();
 
   return (
@@ -20,13 +24,14 @@ export function PlaceholderScreen({ title, description }: Props) {
         <Image source={emblem} className="size-7" accessibilityIgnoresInvertColors />
         <Text className="mt-3 font-display text-[28px] text-white leading-tight">{title}</Text>
       </View>
-      <View className="p-4">
+      <View className="gap-4 p-4">
         <View className="rounded-2xl border border-border bg-surface p-4">
           <Text className="font-sans-semibold text-brand-gold-ink text-xs uppercase tracking-[2px]">
             Coming soon
           </Text>
           <Text className="mt-1.5 font-sans text-muted text-sm">{description}</Text>
         </View>
+        {children}
       </View>
     </ScrollView>
   );

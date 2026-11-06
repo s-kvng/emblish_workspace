@@ -6,7 +6,7 @@ import { PlusJakartaSans_400Regular } from "@expo-google-fonts/plus-jakarta-sans
 import { PlusJakartaSans_500Medium } from "@expo-google-fonts/plus-jakarta-sans/500Medium";
 import { PlusJakartaSans_600SemiBold } from "@expo-google-fonts/plus-jakarta-sans/600SemiBold";
 import { PlusJakartaSans_700Bold } from "@expo-google-fonts/plus-jakarta-sans/700Bold";
-import { ConvexReactClient } from "convex/react";
+import { ConvexReactClient, useConvexAuth } from "convex/react";
 import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
@@ -33,10 +33,24 @@ const convex = new ConvexReactClient(ENV.EXPO_PUBLIC_CONVEX_URL, {
   unsavedChangesWarning: false,
 });
 
+/** Signed-in Staff get the tabs; everyone else only the sign-in screen. */
 function StackLayout() {
+  const { isLoading, isAuthenticated } = useConvexAuth();
+
+  useEffect(() => {
+    if (!isLoading) SplashScreen.hideAsync();
+  }, [isLoading]);
+
+  if (isLoading) return null;
+
   return (
-    <Stack>
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Protected guard={isAuthenticated}>
+        <Stack.Screen name="(tabs)" />
+      </Stack.Protected>
+      <Stack.Protected guard={!isAuthenticated}>
+        <Stack.Screen name="sign-in" />
+      </Stack.Protected>
     </Stack>
   );
 }
@@ -51,10 +65,6 @@ export default function Layout() {
     PlusJakartaSans_700Bold,
   });
   const ready = fontsLoaded || fontError !== null;
-
-  useEffect(() => {
-    if (ready) SplashScreen.hideAsync();
-  }, [ready]);
 
   if (!ready) return null;
 

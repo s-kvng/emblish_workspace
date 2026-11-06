@@ -2,8 +2,11 @@ import { brand } from "@emblish_workspace/brand/tokens";
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 import type { BottomTabBarButtonProps } from "expo-router/tabs";
-import type { ComponentProps } from "react";
+import { type ComponentProps, useEffect } from "react";
 import { type ColorValue, Pressable, Text, View } from "react-native";
+
+import { authClient } from "@/lib/auth-client";
+import { useStaffMember } from "@/lib/staff-member";
 
 /** The raised emblem-gold centre button that opens handover from any tab. */
 function HandOverButton({ onPress, "aria-selected": selected }: BottomTabBarButtonProps) {
@@ -40,6 +43,13 @@ function tabIcon(name: ComponentProps<typeof Ionicons>["name"]) {
 }
 
 export default function TabLayout() {
+  const staffMember = useStaffMember();
+
+  // The Back Office is Staff-only: a session the server refuses is signed out.
+  useEffect(() => {
+    if (staffMember === null) void authClient.signOut();
+  }, [staffMember]);
+
   return (
     <Tabs
       screenOptions={{
