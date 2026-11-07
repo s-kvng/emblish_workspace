@@ -36,6 +36,13 @@
           "resizeMode": "contain",
           "backgroundColor": "#2A0F42"
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Emblish uses your photos for Product galleries.",
+          "cameraPermission": "Emblish uses the camera to photograph Products."
+        }
       ]
     ],
     "experiments": {

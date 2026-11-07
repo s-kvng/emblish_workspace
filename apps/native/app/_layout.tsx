@@ -48,6 +48,9 @@ function StackLayout() {
       <Stack.Protected guard={isAuthenticated}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="staff" />
+        <Stack.Screen name="products/index" />
+        <Stack.Screen name="products/edit" options={{ gestureEnabled: false }} />
+        <Stack.Screen name="categories" />
       </Stack.Protected>
       <Stack.Protected guard={!isAuthenticated}>
         <Stack.Screen name="sign-in" />

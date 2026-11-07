@@ -30,3 +30,18 @@ export async function refusal(promise: Promise<unknown>) {
     (error) => (error instanceof ConvexError ? (error.data as { code: string }).code : error),
   );
 }
+
+/** Adds an active Staff member (not an Owner) and returns their calls. */
+export async function withStaffMember(t: ReturnType<typeof setupBackend>, name = "Kofi Boateng") {
+  const authUserId = `auth-${name.toLowerCase().replace(/\W+/g, "-")}`;
+  await t.run((ctx) =>
+    ctx.db.insert("staff", {
+      authUserId,
+      email: `${authUserId}@emblish.test`,
+      name,
+      role: "staff",
+      status: "active",
+    }),
+  );
+  return t.withIdentity({ subject: authUserId });
+}
