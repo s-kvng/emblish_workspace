@@ -12,6 +12,25 @@ export const productOption = v.object({
   name: v.string(),
   values: v.array(v.string()),
 });
+/** Every way Stock changes; see GLOSSARY.md, Stock Movement. */
+export const stockMovementKind = v.union(
+  v.literal("arrival"),
+  v.literal("lateArrival"),
+  v.literal("released"),
+  v.literal("sold"),
+  v.literal("cancelled"),
+  v.literal("returned"),
+  v.literal("soldOffline"),
+  v.literal("adjustment"),
+);
+/** The reason chips on an Adjustment. */
+export const adjustmentReason = v.union(
+  v.literal("damaged"),
+  v.literal("lost"),
+  v.literal("recount"),
+  v.literal("found"),
+  v.literal("other"),
+);
 const invitationStatus = v.union(
   v.literal("pending"),
   v.literal("accepted"),
@@ -78,9 +97,30 @@ export default defineSchema({
     storePrice: v.optional(v.number()),
     /** One of the Product's gallery photos; the Storefront falls back to the cover. */
     imageId: v.optional(v.id("_storage")),
+    /**
+     * Cached sum of the Variant's Stock Movements, written in the same mutation as each one.
+     * Missing (read as 0) on Variants saved before Stock existed; read it through `stockCounts`.
+     */
+    stockOnHand: v.optional(v.number()),
+    /** Cached units under active Stock Holds. Available = on-hand − held. */
+    stockHeld: v.optional(v.number()),
   })
     .index("by_product", ["productId"])
     .index("by_sku", ["sku"]),
+
+  // Append-only: Stock is the sum of a Variant's rows, never edited directly.
+  stockMovements: defineTable({
+    variantId: v.id("variants"),
+    kind: stockMovementKind,
+    /** Signed whole units: positive into Stock, negative out of it. */
+    quantity: v.number(),
+    /** Required on an Adjustment. */
+    reason: v.optional(adjustmentReason),
+    note: v.optional(v.string()),
+    /** Missing when the system made the movement, such as a paid checkout. */
+    staffId: v.optional(v.id("staff")),
+    // Source refs (Order Window, order, Pre-order) are added with the tables they point at.
+  }).index("by_variant", ["variantId"]),
 
   // A single row, seeded by the bootstrap and edited by an Owner.
   settings: defineTable({

@@ -13,6 +13,7 @@ import type * as backOffice_categories from "../backOffice/categories.js";
 import type * as backOffice_invitation from "../backOffice/invitation.js";
 import type * as backOffice_products from "../backOffice/products.js";
 import type * as backOffice_staff from "../backOffice/staff.js";
+import type * as backOffice_stock from "../backOffice/stock.js";
 import type * as healthCheck from "../healthCheck.js";
 import type * as http from "../http.js";
 import type * as lib_guards from "../lib/guards.js";
@@ -24,10 +25,12 @@ import type * as model_invitations from "../model/invitations.js";
 import type * as model_products from "../model/products.js";
 import type * as model_settings from "../model/settings.js";
 import type * as model_staff from "../model/staff.js";
+import type * as model_stock from "../model/stock.js";
 import type * as system_bootstrap from "../system/bootstrap.js";
 import type * as system_email from "../system/email.js";
 import type * as system_invitations from "../system/invitations.js";
 import type * as system_staff from "../system/staff.js";
+import type * as system_stock from "../system/stock.js";
 
 import type {
   ApiFromModules,
@@ -41,6 +44,7 @@ declare const fullApi: ApiFromModules<{
   "backOffice/invitation": typeof backOffice_invitation;
   "backOffice/products": typeof backOffice_products;
   "backOffice/staff": typeof backOffice_staff;
+  "backOffice/stock": typeof backOffice_stock;
   healthCheck: typeof healthCheck;
   http: typeof http;
   "lib/guards": typeof lib_guards;
@@ -52,10 +56,12 @@ declare const fullApi: ApiFromModules<{
   "model/products": typeof model_products;
   "model/settings": typeof model_settings;
   "model/staff": typeof model_staff;
+  "model/stock": typeof model_stock;
   "system/bootstrap": typeof system_bootstrap;
   "system/email": typeof system_email;
   "system/invitations": typeof system_invitations;
   "system/staff": typeof system_staff;
+  "system/stock": typeof system_stock;
 }>;
 
 /**

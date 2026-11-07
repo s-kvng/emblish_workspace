@@ -11,6 +11,7 @@ import {
   slugFor,
   variantCombinations,
 } from "./catalog";
+import { hasStockHistory } from "./stock";
 
 /** The wizard's whole Product, saved in one go at its Review step. */
 export type ProductDraft = {
@@ -273,12 +274,20 @@ export async function saveProductDraft(
       kept.add(variant.variantId);
       await ctx.db.patch(variant.variantId, stored);
     } else {
-      await ctx.db.insert("variants", { productId, ...stored });
+      await ctx.db.insert("variants", { productId, ...stored, stockOnHand: 0, stockHeld: 0 });
     }
   }
-  // Nothing references a Variant yet; once Stock or orders do, those are archived instead.
+  // A Variant with Stock history stays, so its ledger keeps resolving; until Variants can be
+  // archived, such a Variant can't be removed.
   for (const variant of existing) {
-    if (!kept.has(variant._id)) await ctx.db.delete(variant._id);
+    if (kept.has(variant._id)) continue;
+    if (await hasStockHistory(ctx, variant._id)) {
+      throw new ConvexError({
+        code: "VARIANT_HAS_STOCK",
+        message: `${variant.optionValues.join(" / ") || "This Variant"} has Stock history, so it can't be removed.`,
+      });
+    }
+    await ctx.db.delete(variant._id);
   }
   return productId;
 }
