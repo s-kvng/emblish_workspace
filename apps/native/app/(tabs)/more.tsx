@@ -2,6 +2,7 @@ import { brand } from "@emblish_workspace/brand/tokens";
 import { Ionicons } from "@expo/vector-icons";
 import { Link } from "expo-router";
 import { Button } from "heroui-native";
+import type { ComponentProps } from "react";
 import { Pressable, Text, View } from "react-native";
 
 import { PlaceholderScreen } from "@/components/placeholder-screen";
@@ -15,22 +16,19 @@ export default function More() {
 
   return (
     <PlaceholderScreen title="More" description="Stock and Delivery Zones.">
+      <MoreLink
+        href="/products"
+        icon="pricetags"
+        title="Products"
+        detail="Create, publish and archive Products; Categories"
+      />
       {staffMember?.role === "owner" ? (
-        <Link href="/staff" asChild>
-          <Pressable
-            accessibilityRole="button"
-            className="flex-row items-center gap-3 rounded-2xl border border-border bg-surface p-4"
-          >
-            <Ionicons name="people" size={22} color={brand.purple} />
-            <View className="flex-1">
-              <Text className="font-sans-semibold text-base text-foreground">Staff</Text>
-              <Text className="font-sans text-muted text-sm">
-                Invite people, change roles, deactivate
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={brand["ink-muted"]} />
-          </Pressable>
-        </Link>
+        <MoreLink
+          href="/staff"
+          icon="people"
+          title="Staff"
+          detail="Invite people, change roles, deactivate"
+        />
       ) : null}
       <View className="rounded-2xl border border-border bg-surface p-4">
         <Text className="font-sans-semibold text-muted text-xs uppercase tracking-[2px]">
@@ -51,5 +49,33 @@ export default function More() {
         </Button>
       </View>
     </PlaceholderScreen>
+  );
+}
+
+function MoreLink({
+  href,
+  icon,
+  title,
+  detail,
+}: {
+  href: "/products" | "/staff";
+  icon: ComponentProps<typeof Ionicons>["name"];
+  title: string;
+  detail: string;
+}) {
+  return (
+    <Link href={href} asChild>
+      <Pressable
+        accessibilityRole="button"
+        className="flex-row items-center gap-3 rounded-2xl border border-border bg-surface p-4"
+      >
+        <Ionicons name={icon} size={22} color={brand.purple} />
+        <View className="flex-1">
+          <Text className="font-sans-semibold text-base text-foreground">{title}</Text>
+          <Text className="font-sans text-muted text-sm">{detail}</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={20} color={brand["ink-muted"]} />
+      </Pressable>
+    </Link>
   );
 }

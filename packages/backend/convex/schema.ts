@@ -3,6 +3,15 @@ import { v } from "convex/values";
 
 export const staffRole = v.union(v.literal("owner"), v.literal("staff"));
 export const staffStatus = v.union(v.literal("active"), v.literal("deactivated"));
+export const productStatus = v.union(
+  v.literal("draft"),
+  v.literal("published"),
+  v.literal("archived"),
+);
+export const productOption = v.object({
+  name: v.string(),
+  values: v.array(v.string()),
+});
 const invitationStatus = v.union(
   v.literal("pending"),
   v.literal("accepted"),
@@ -34,6 +43,44 @@ export default defineSchema({
     .index("by_email", ["email"])
     .index("by_token", ["token"])
     .index("by_status", ["status"]),
+
+  // A flat list, shown on the Storefront in `sortOrder`.
+  categories: defineTable({
+    name: v.string(),
+    sortOrder: v.number(),
+  }).index("by_sortOrder", ["sortOrder"]),
+
+  products: defineTable({
+    name: v.string(),
+    /** The Storefront URL name, unique across the store and kept when the Product is renamed. */
+    slug: v.string(),
+    description: v.string(),
+    /** Missing only on a Draft; publishing needs one. */
+    categoryId: v.optional(v.id("categories")),
+    status: productStatus,
+    /** Ordered photos; the first is the cover. */
+    gallery: v.array(v.id("_storage")),
+    /** Up to 3; every combination of their values is a Variant. */
+    options: v.array(productOption),
+    /** Offered In-stock at its Store Prices; off means Pre-order only, through Order Windows. */
+    sellInStock: v.boolean(),
+  })
+    .index("by_slug", ["slug"])
+    .index("by_status_and_category", ["status", "categoryId"]),
+
+  variants: defineTable({
+    productId: v.id("products"),
+    /** One value per Product option, in option order; empty for the default Variant. */
+    optionValues: v.array(v.string()),
+    /** Unique across the store; missing only while the Product is a Draft. */
+    sku: v.optional(v.string()),
+    /** Integer pesewas. Only an Owner sets it. */
+    storePrice: v.optional(v.number()),
+    /** One of the Product's gallery photos; the Storefront falls back to the cover. */
+    imageId: v.optional(v.id("_storage")),
+  })
+    .index("by_product", ["productId"])
+    .index("by_sku", ["sku"]),
 
   // A single row, seeded by the bootstrap and edited by an Owner.
   settings: defineTable({
