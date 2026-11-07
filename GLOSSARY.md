@@ -21,7 +21,7 @@ A Staff member who may also send money out (refunds, Forfeits), set standing pri
 _Avoid_: Admin, superuser, manager
 
 **Customer**:
-A person who buys on the Storefront, identified by a verified phone number. A Customer comes into being on their first verified checkout; there is no separate sign-up.
+A person who buys on the Storefront, identified by a verified phone number. A Customer comes into being the first time they sign in with a phone code (at Checkout, or from My orders); there is no separate sign-up.
 _Avoid_: User, account, guest, buyer
 
 ## Catalog

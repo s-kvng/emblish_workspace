@@ -10,6 +10,8 @@ export default defineConfig({
       CONVEX_SITE_URL: "https://emblish-test.convex.site",
       RESEND_API_KEY: "re_test",
       EMAIL_FROM: "Emblish <no-reply@emblish.test>",
+      ARKESEL_API_KEY: "arkesel-test-key",
+      ARKESEL_WEBHOOK_SECRET: "arkesel-test-webhook-secret",
     },
   },
 });
