@@ -11,7 +11,8 @@ import {
   slugFor,
   variantCombinations,
 } from "./catalog";
-import { hasStockHistory } from "./stock";
+import { buyableNow } from "./shelf";
+import { hasStockHistory, stockCounts } from "./stock";
 
 /** The wizard's whole Product, saved in one go at its Review step. */
 export type ProductDraft = {
@@ -331,10 +332,79 @@ export async function restoreProduct(ctx: Pick<MutationCtx, "db">, productId: Id
   if (product.status === "archived") await ctx.db.patch(productId, { status: "draft" });
 }
 
-/** The Products Customers can see: Published ones only, never Drafts or archived ones. */
-export async function listStorefrontProducts(ctx: Pick<QueryCtx, "db">) {
+/**
+ * The Products Customers can see: Published ones only, never Drafts or archived ones,
+ * optionally in one Category; newest first.
+ */
+export async function listStorefrontProducts(
+  ctx: Pick<QueryCtx, "db">,
+  categoryId?: Id<"categories">,
+) {
   return await ctx.db
     .query("products")
-    .withIndex("by_status_and_category", (q) => q.eq("status", "published"))
+    .withIndex("by_status_and_category", (q) =>
+      categoryId === undefined
+        ? q.eq("status", "published")
+        : q.eq("status", "published").eq("categoryId", categoryId),
+    )
+    .order("desc")
     .collect();
+}
+
+/**
+ * A Product's Variants as Customers see them, in option order: a Store Price only while the
+ * Product is sold In-stock, and the Stock they can buy now, never below zero.
+ */
+export async function shelfVariants(ctx: Pick<QueryCtx, "db">, product: Doc<"products">) {
+  const variants = inOptionOrder(product.options, await listVariants(ctx, product._id));
+  return variants.map((variant) => ({
+    _id: variant._id,
+    optionValues: variant.optionValues,
+    storePrice: product.sellInStock ? variant.storePrice : undefined,
+    inStock: Math.max(0, stockCounts(variant).available),
+    imageId: variant.imageId,
+  }));
+}
+
+/** A Product's card on the Storefront's grids, or null if it has no Store Price to show. */
+export async function shelfCard(ctx: Pick<QueryCtx, "db" | "storage">, product: Doc<"products">) {
+  const variants = await shelfVariants(ctx, product);
+  const buyable = variants.filter(buyableNow);
+  // Sold out, it shows the price it last sold from.
+  const prices = (buyable.length > 0 ? buyable : variants).flatMap((variant) =>
+    variant.storePrice === undefined ? [] : [variant.storePrice],
+  );
+  // Publishing needs a Store Price on every Variant, so this only guards bad data.
+  if (prices.length === 0) return null;
+  const cover = product.gallery[0];
+  return {
+    slug: product.slug,
+    name: product.name,
+    coverUrl: (cover && (await ctx.storage.getUrl(cover))) || undefined,
+    fromPrice: Math.min(...prices),
+    soldOut: buyable.length === 0,
+  };
+}
+
+/** The In-stock grid: Published Products sold In-stock, ones with Stock before sold-out ones. */
+export async function shelfCards(
+  ctx: Pick<QueryCtx, "db" | "storage">,
+  categoryId?: Id<"categories">,
+) {
+  const products = (await listStorefrontProducts(ctx, categoryId)).filter(
+    (product) => product.sellInStock,
+  );
+  const cards = (await Promise.all(products.map((product) => shelfCard(ctx, product)))).filter(
+    (card) => card !== null,
+  );
+  return [...cards.filter((card) => !card.soldOut), ...cards.filter((card) => card.soldOut)];
+}
+
+/** A Published Product by its slug; Drafts and archived Products aren't found. */
+export async function findStorefrontProduct(ctx: Pick<QueryCtx, "db">, slug: string) {
+  const product = await ctx.db
+    .query("products")
+    .withIndex("by_slug", (q) => q.eq("slug", slug))
+    .unique();
+  return product?.status === "published" ? product : null;
 }

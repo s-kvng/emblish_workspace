@@ -5,6 +5,7 @@ import { Toaster } from "@emblish_workspace/ui/components/sonner";
 import { ConvexReactClient } from "convex/react";
 
 import { authClient } from "@/lib/auth-client";
+import { BagProvider } from "@/lib/bag";
 
 import { ENV } from "../env";
 
@@ -20,7 +21,7 @@ export default function Providers({
   return (
     <>
       <ConvexBetterAuthProvider client={convex} authClient={authClient} initialToken={initialToken}>
-        {children}
+        <BagProvider>{children}</BagProvider>
       </ConvexBetterAuthProvider>
       <Toaster theme="light" richColors />
     </>

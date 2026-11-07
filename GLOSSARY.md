@@ -128,6 +128,10 @@ _Avoid_: Backorder, missing stock
 
 ## Store sales
 
+**Bag**:
+The Variants and quantities a Customer has picked on the Storefront but not yet submitted; submitting it makes a Checkout.
+_Avoid_: Cart, basket, trolley
+
 **Checkout**:
 A Customer's submitted basket awaiting a single payment. It may mix In-stock and Pre-order Variants; when paid it becomes at most one Store Order plus one Pre-order per Order Window, and if unpaid it expires as a whole.
 _Avoid_: Cart, basket, payment intent, order
