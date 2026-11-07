@@ -25,6 +25,16 @@ export function requestPasswordReset(t: TestBackend, email: string, redirectTo: 
   return post(t, "/request-password-reset", { email, redirectTo });
 }
 
+/** Asks for a sign-in code by SMS, as the Storefront's phone step does. */
+export function sendPhoneCode(t: TestBackend, phoneNumber: string) {
+  return post(t, "/phone-number/send-otp", { phoneNumber });
+}
+
+/** Signs a Customer in with the code from the SMS. */
+export function verifyPhoneCode(t: TestBackend, phoneNumber: string, code: string) {
+  return post(t, "/phone-number/verify", { phoneNumber, code });
+}
+
 /** Sets a new password with the token the reset link carried. */
 export function resetPassword(t: TestBackend, token: string, newPassword: string) {
   return post(t, "/reset-password", { token, newPassword });

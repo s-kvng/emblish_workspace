@@ -2,6 +2,7 @@ import { ConvexError } from "convex/values";
 
 import type { Doc } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
+import { getCustomer } from "../model/customers";
 import { findInvitation } from "../model/invitations";
 import { getActiveStaff } from "../model/staff";
 
@@ -24,6 +25,25 @@ export async function requireStaff(ctx: GuardCtx): Promise<Doc<"staff">> {
     });
   }
   return staff;
+}
+
+/** Opens every signed-in `storefront/` function: the caller must be a Customer. */
+export async function requireCustomer(ctx: GuardCtx): Promise<Doc<"customers">> {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) {
+    throw new ConvexError({
+      code: "UNAUTHENTICATED",
+      message: "Sign in with your phone number to continue.",
+    });
+  }
+  const customer = await getCustomer(ctx, identity.subject);
+  if (!customer) {
+    throw new ConvexError({
+      code: "FORBIDDEN",
+      message: "Only Customers can do this.",
+    });
+  }
+  return customer;
 }
 
 /** For Owner-only actions: sending money out, standing prices and fees, managing Staff. */

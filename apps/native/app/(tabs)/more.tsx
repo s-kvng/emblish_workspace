@@ -17,6 +17,12 @@ export default function More() {
   return (
     <PlaceholderScreen title="More" description="Stock and Delivery Zones.">
       <MoreLink
+        href="/stock"
+        icon="cube"
+        title="Stock"
+        detail="Counts per Variant, Adjustments, Sold offline"
+      />
+      <MoreLink
         href="/products"
         icon="pricetags"
         title="Products"
@@ -58,7 +64,7 @@ function MoreLink({
   title,
   detail,
 }: {
-  href: "/products" | "/staff";
+  href: "/products" | "/staff" | "/stock";
   icon: ComponentProps<typeof Ionicons>["name"];
   title: string;
   detail: string;

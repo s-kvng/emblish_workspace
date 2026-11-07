@@ -4,6 +4,8 @@ The Storefront (Customers) and the Back Office (Staff) call the same Convex back
 
 The one Back Office exception is accepting an invitation: the invitee isn't Staff yet, so `convex/backOffice/invitation.ts` opens with a check on the invitation's token instead of `requireStaff`, the Back Office's equivalent of the Storefront's public-by-code check. It stays in `backOffice/` because only the Back Office app calls it, and so the folder still holds every way into Staff access.
 
+Browsing the catalog is the Storefront's one guard-free door: `convex/storefront/catalog.ts` is open to anyone, signed in or not, and returns only Published Products and the fields a Customer may see. Every other Storefront function opens with `requireCustomer` or a public-by-code check.
+
 ## Consequences
 
 A domain change usually touches a `model/` helper plus thin wrappers in one or both surface folders. A function that both apps need gets two wrappers, not one shared export.

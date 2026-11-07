@@ -23,10 +23,13 @@ export const tables = {
 		updatedAt: v.number(),
 		userId: v.optional(v.union(v.null(), v.string())),
 		kind: v.string(),
+		phoneNumber: v.optional(v.union(v.null(), v.string())),
+		phoneNumberVerified: v.optional(v.union(v.null(), v.boolean())),
 	})
 		.index("email_name", ["email", "name"])
 		.index("name", ["name"])
-		.index("userId", ["userId"]),
+		.index("userId", ["userId"])
+		.index("phoneNumber", ["phoneNumber"]),
 	session: defineTable({
 		expiresAt: v.number(),
 		token: v.string(),

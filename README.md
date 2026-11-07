@@ -68,6 +68,26 @@ bunx convex env set EMAIL_FROM "Emblish <no-reply@your-verified-domain>"
 
 Email links open the Back Office app through its URL scheme, `emblish-back-office://`. To point them somewhere else (such as Expo Go's `exp://` URL during development), set `NATIVE_APP_URL` on the deployment, with its trailing `://` or `/`.
 
+### Customer SMS
+
+Customers sign in with a 6-digit code, and every Customer SMS goes through [Arkesel](https://arkesel.com) from sender ID `EMBLISH`, which the networks must approve first. Generate a webhook secret in Arkesel (`POST /api/v2/webhooks/secret/rotate`), then set these on the Convex deployment, from `packages/backend`:
+
+```bash
+bunx convex env set ARKESEL_API_KEY ...
+```
+
+```bash
+bunx convex env set ARKESEL_WEBHOOK_SECRET ...
+```
+
+On dev and preview deployments, also set `ARKESEL_SANDBOX` to `true` so nothing reaches the networks or is billed:
+
+```bash
+bunx convex env set ARKESEL_SANDBOX true
+```
+
+Arkesel reports delivery to `<CONVEX_SITE_URL>/arkesel/delivery`, which checks the report's signature before updating the `smsMessages` row.
+
 Backend tests (`bun run test`) run in convex-test. After changing the Better Auth options, regenerate `convex/betterAuth/schema.ts` as its header describes.
 
 ## UI Customization

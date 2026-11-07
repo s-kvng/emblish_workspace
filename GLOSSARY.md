@@ -21,7 +21,7 @@ A Staff member who may also send money out (refunds, Forfeits), set standing pri
 _Avoid_: Admin, superuser, manager
 
 **Customer**:
-A person who buys on the Storefront, identified by a verified phone number. A Customer comes into being on their first verified checkout; there is no separate sign-up.
+A person who buys on the Storefront, identified by a verified phone number. A Customer comes into being the first time they sign in with a phone code (at Checkout, or from My orders); there is no separate sign-up.
 _Avoid_: User, account, guest, buyer
 
 ## Catalog
@@ -127,6 +127,10 @@ Units ordered in an Order Window that never arrive; the affected Pre-orders are 
 _Avoid_: Backorder, missing stock
 
 ## Store sales
+
+**Bag**:
+The Variants and quantities a Customer has picked on the Storefront but not yet submitted; submitting it makes a Checkout.
+_Avoid_: Cart, basket, trolley
 
 **Checkout**:
 A Customer's submitted basket awaiting a single payment. It may mix In-stock and Pre-order Variants; when paid it becomes at most one Store Order plus one Pre-order per Order Window, and if unpaid it expires as a whole.
