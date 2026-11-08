@@ -5,6 +5,7 @@ import { v } from "convex/values";
 import { query } from "../_generated/server";
 import { listCategories } from "../model/categories";
 import { findStorefrontProduct, shelfCards, shelfVariants } from "../model/products";
+import { pickupLocation } from "../model/settings";
 import { productOption } from "../schema";
 
 const shelfCardValidator = v.object({
@@ -109,4 +110,55 @@ export const product = query({
       variants: await shelfVariants(ctx, product),
     };
   },
+});
+
+/**
+ * The Bag's lines priced for display, in the order asked: each Variant still sold In-stock
+ * on a Published Product, with what can be bought now. Anything else is left out, so the
+ * Bag can drop it. Ids are strings because the Bag lives in the browser.
+ */
+export const bagLines = query({
+  args: { variantIds: v.array(v.string()) },
+  returns: v.array(
+    v.object({
+      variantId: v.id("variants"),
+      productName: v.string(),
+      slug: v.string(),
+      variantLabel: v.string(),
+      /** Integer pesewas. */
+      storePrice: v.number(),
+      /** Units a Customer can buy now. */
+      inStock: v.number(),
+      imageUrl: v.optional(v.string()),
+    }),
+  ),
+  handler: async (ctx, { variantIds }) => {
+    const lines = [];
+    for (const raw of variantIds.slice(0, 50)) {
+      const variantId = ctx.db.normalizeId("variants", raw);
+      const variant = variantId && (await ctx.db.get(variantId));
+      const product = variant && (await ctx.db.get(variant.productId));
+      if (!variant || !product || product.status !== "published") continue;
+      const shelf = (await shelfVariants(ctx, product)).find((s) => s._id === variant._id);
+      if (shelf?.storePrice === undefined) continue;
+      const imageId = variant.imageId ?? product.gallery[0];
+      lines.push({
+        variantId: variant._id,
+        productName: product.name,
+        slug: product.slug,
+        variantLabel: variant.optionValues.join(" / "),
+        storePrice: shelf.storePrice,
+        inStock: shelf.inStock,
+        imageUrl: (imageId && (await ctx.storage.getUrl(imageId))) || undefined,
+      });
+    }
+    return lines;
+  },
+});
+
+/** The pickup point's address and hours, as the Pickup step and Receipt show them. */
+export const pickupPoint = query({
+  args: {},
+  returns: v.string(),
+  handler: async (ctx) => await pickupLocation(ctx),
 });

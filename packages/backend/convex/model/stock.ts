@@ -67,6 +67,8 @@ export async function recordMovement(
     reason?: AdjustmentReason;
     note?: string;
     staffId?: Id<"staff">;
+    /** The order a Sold movement filled. */
+    orderId?: Id<"orders">;
   },
 ): Promise<Id<"stockMovements">> {
   const { variantId, kind, quantity, reason } = movement;

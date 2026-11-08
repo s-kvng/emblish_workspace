@@ -39,7 +39,53 @@ export const smsStatus = v.union(
   v.literal("failed"),
 );
 /** Keys of `model/sms` templates; add one here with each new template. */
-export const smsTemplate = v.union(v.literal("loginCode"));
+export const smsTemplate = v.union(
+  v.literal("loginCode"),
+  v.literal("paymentConfirmed"),
+  v.literal("paymentNotFilled"),
+  v.literal("paymentUnmatched"),
+);
+/** A Checkout's life: `pending` while it awaits payment, then paid, or expired / released unpaid. */
+export const checkoutStatus = v.union(
+  v.literal("pending"),
+  v.literal("paid"),
+  v.literal("expired"),
+  v.literal("released"),
+);
+/** A Checkout line as it was priced at Pay. */
+export const checkoutLine = v.object({
+  variantId: v.id("variants"),
+  productName: v.string(),
+  /** The Variant's option values joined, e.g. "Red / M"; empty for a default Variant. */
+  variantLabel: v.string(),
+  quantity: v.number(),
+  /** Integer pesewas: the Store Price at Pay. */
+  unitPrice: v.number(),
+});
+/** Fulfilment chosen once at Checkout; Delivery joins it with Delivery Zones. */
+export const fulfilment = v.object({ method: v.literal("pickup") });
+/** Shared by both order kinds; see the data-model decision. */
+export const orderStatus = v.union(
+  v.literal("awaitingArrival"),
+  v.literal("paymentDue"),
+  v.literal("ready"),
+  v.literal("collected"),
+  v.literal("dispatched"),
+  v.literal("delivered"),
+  v.literal("cancelled"),
+  v.literal("forfeited"),
+);
+/** Statuses where an order's goods are still to be handed over, so its Pickup Code is live. */
+export const openOrderStatuses = ["awaitingArrival", "paymentDue", "ready", "dispatched"] as const;
+export const refundKind = v.union(
+  v.literal("shortfall"),
+  v.literal("latePaid"),
+  v.literal("cancelledLine"),
+  v.literal("cancelledPreorder"),
+  v.literal("afterHandover"),
+  v.literal("fulfilmentSwitch"),
+  v.literal("discretionary"),
+);
 const invitationStatus = v.union(
   v.literal("pending"),
   v.literal("accepted"),
@@ -160,8 +206,121 @@ export default defineSchema({
     note: v.optional(v.string()),
     /** Missing when the system made the movement, such as a paid checkout. */
     staffId: v.optional(v.id("staff")),
-    // Source refs (Order Window, order, Pre-order) are added with the tables they point at.
+    /** The order a Sold movement filled. */
+    orderId: v.optional(v.id("orders")),
+    // Source refs (Order Window, Pre-order) are added with the tables they point at.
   }).index("by_variant", ["variantId"]),
+
+  // A submitted Bag awaiting one payment. Created at Pay with its Stock Holds; unpaid, it
+  // expires as a whole at `expiresAt` (a `scheduler.runAt` job) or is released when the Bag changes.
+  checkouts: defineTable({
+    customerId: v.id("customers"),
+    lines: v.array(checkoutLine),
+    fulfilment,
+    /** Integer pesewas: what the payment must cover. */
+    total: v.number(),
+    status: checkoutStatus,
+    expiresAt: v.number(),
+  }).index("by_customer_and_status", ["customerId", "status"]),
+
+  // Units a Checkout sets aside. Stock-kind only for now; Order Window caps add `windowCap`.
+  checkoutHolds: defineTable({
+    checkoutId: v.id("checkouts"),
+    kind: v.literal("stock"),
+    variantId: v.id("variants"),
+    quantity: v.number(),
+    status: v.union(
+      v.literal("active"),
+      v.literal("converted"),
+      v.literal("lapsed"),
+      v.literal("released"),
+    ),
+  }).index("by_checkout", ["checkoutId"]),
+
+  // One Seev Plus hosted-checkout session per Pay or retry (ADR 0003). Maps Seev's reference
+  // back to the Checkout and drives the polling; `settledAt` is set once it's verified paid.
+  paymentSessions: defineTable({
+    checkoutId: v.id("checkouts"),
+    reference: v.string(),
+    checkoutUrl: v.string(),
+    /** When Seev stops accepting payment on it. */
+    expiresAt: v.number(),
+    settledAt: v.optional(v.number()),
+  })
+    .index("by_reference", ["reference"])
+    .index("by_checkout", ["checkoutId"]),
+
+  // One row per verified Seev payment; a Receipt is a rendering of one.
+  payments: defineTable({
+    seevReference: v.string(),
+    /** Integer pesewas, as Seev's verify route reported it. */
+    amount: v.number(),
+    paidAt: v.number(),
+    customerId: v.id("customers"),
+    checkoutId: v.id("checkouts"),
+    /** `R-0001`, shown on the Receipt. */
+    receiptNumber: v.string(),
+    /** 8 characters, the Receipt's public `/r/<code>`. */
+    receiptCode: v.string(),
+  })
+    .index("by_reference", ["seevReference"])
+    .index("by_receiptCode", ["receiptCode"])
+    .index("by_customer", ["customerId"])
+    .index("by_checkout", ["checkoutId"]),
+
+  // Pre-orders and Store Orders (ADR 0002). Only Store Orders exist so far.
+  orders: defineTable({
+    kind: v.literal("store"),
+    /** `S-0001`. */
+    reference: v.string(),
+    customerId: v.id("customers"),
+    checkoutId: v.id("checkouts"),
+    paymentId: v.id("payments"),
+    placedAt: v.number(),
+    fulfilment,
+    /** 6 digits, unique among open orders. */
+    pickupCode: v.string(),
+    status: orderStatus,
+    readyAt: v.optional(v.number()),
+  })
+    .index("by_reference", ["reference"])
+    .index("by_customer", ["customerId"])
+    .index("by_payment", ["paymentId"])
+    .index("by_pickupCode_and_status", ["pickupCode", "status"]),
+
+  // An order's lines, with names and prices frozen at payment.
+  orderLines: defineTable({
+    orderId: v.id("orders"),
+    variantId: v.id("variants"),
+    productName: v.string(),
+    variantLabel: v.string(),
+    unitPrice: v.number(),
+    quantity: v.number(),
+  }).index("by_order", ["orderId"]),
+
+  // Money owed back to a Customer from one payment. Paying it out comes with the refunds ticket.
+  refunds: defineTable({
+    paymentId: v.id("payments"),
+    orderId: v.optional(v.id("orders")),
+    kind: refundKind,
+    /** Integer pesewas. */
+    amount: v.number(),
+    status: v.union(
+      v.literal("toRefund"),
+      v.literal("processing"),
+      v.literal("refunded"),
+      v.literal("needsAttention"),
+    ),
+    note: v.optional(v.string()),
+  })
+    .index("by_status", ["status"])
+    .index("by_payment", ["paymentId"]),
+
+  // One row per reference sequence (`S`, `R`, later `P` and `INV`), bumped where it's used.
+  counters: defineTable({
+    name: v.string(),
+    next: v.number(),
+  }).index("by_name", ["name"]),
 
   // A single row, seeded by the bootstrap and edited by an Owner.
   settings: defineTable({
