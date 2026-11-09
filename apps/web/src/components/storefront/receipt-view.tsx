@@ -43,6 +43,10 @@ export default function ReceiptView({
     }
   };
 
+  // Fulfilment is chosen once per Checkout, so every order on the Receipt shares it.
+  const fulfilment = receipt.orders[0]?.fulfilment ?? {
+    method: "pickup" as const,
+  };
   const paidAt = new Date(receipt.paidAt).toLocaleString("en-GH", {
     dateStyle: "medium",
     timeStyle: "short",
@@ -65,10 +69,31 @@ export default function ReceiptView({
         <dl className="space-y-0.5">
           {receipt.customerName && <Row label="Customer" value={receipt.customerName} />}
           <Row label="Phone" value={receipt.phone} />
-          <Row label="Fulfilment" value="Pickup" />
+          <Row
+            label="Fulfilment"
+            value={fulfilment.method === "pickup" ? "Pickup" : `Delivery · ${fulfilment.zoneName}`}
+          />
         </dl>
-        {receipt.pickupLocation && (
-          <p className="mt-1 whitespace-pre-line text-muted-foreground">{receipt.pickupLocation}</p>
+        {fulfilment.method === "pickup" ? (
+          receipt.pickupLocation && (
+            <p className="mt-1 whitespace-pre-line text-muted-foreground">
+              {receipt.pickupLocation}
+            </p>
+          )
+        ) : (
+          <p className="mt-1 text-muted-foreground">
+            To {fulfilment.recipientName} ({fulfilment.recipientPhone})
+            <br />
+            {[fulfilment.street, fulfilment.area].filter(Boolean).join(", ")}
+            <br />
+            Near {fulfilment.landmark}
+            {fulfilment.ghanaPostGps && (
+              <>
+                <br />
+                GPS {fulfilment.ghanaPostGps}
+              </>
+            )}
+          </p>
         )}
         {receipt.orders.map((order) => (
           <section key={order.reference}>
@@ -91,12 +116,24 @@ export default function ReceiptView({
                 </li>
               ))}
             </ul>
-            <div className="mt-3 rounded border-2 border-brand-purple border-dashed py-2 text-center">
-              <p className="text-[11px] text-muted-foreground uppercase">Pickup Code</p>
-              <p className="font-bold text-2xl text-brand-purple tracking-[0.3em]">
-                {order.pickupCode}
-              </p>
-            </div>
+            {order.fulfilment.method === "delivery" && (
+              <div className="mt-1 flex justify-between gap-3">
+                <span>Delivery Fee</span>
+                <span>
+                  {order.fulfilment.deliveryFee === undefined
+                    ? "quoted by SMS"
+                    : ghs(order.fulfilment.deliveryFee)}
+                </span>
+              </div>
+            )}
+            {order.fulfilment.method === "pickup" && (
+              <div className="mt-3 rounded border-2 border-brand-purple border-dashed py-2 text-center">
+                <p className="text-[11px] text-muted-foreground uppercase">Pickup Code</p>
+                <p className="font-bold text-2xl text-brand-purple tracking-[0.3em]">
+                  {order.pickupCode}
+                </p>
+              </div>
+            )}
           </section>
         ))}
         <Rule />
@@ -120,7 +157,9 @@ export default function ReceiptView({
         <p className="text-center text-muted-foreground">
           {receipt.orders.length > 0 && (
             <>
-              Show your Pickup Code when you collect.
+              {fulfilment.method === "pickup"
+                ? "Show your Pickup Code when you collect."
+                : "We text you when your order is on its way."}
               <br />
             </>
           )}

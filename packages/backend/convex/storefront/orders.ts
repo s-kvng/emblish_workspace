@@ -2,8 +2,10 @@ import { v } from "convex/values";
 
 import { query } from "../_generated/server";
 import { requireCustomer } from "../lib/guards";
+import { deliveryAsShown, shownDelivery } from "../model/fulfilment";
 import {
   customerNeedsToAct,
+  handOverable,
   isPastOrder,
   orderLinesWithPhotos,
   refundsOnOrder,
@@ -40,7 +42,11 @@ const card = v.object({
     receiptNumber: v.string(),
     receiptCode: v.string(),
   }),
-  fulfilment: v.object({ method: v.literal("pickup"), location: v.string() }),
+  /** Pickup with the pickup point, or Delivery to the address frozen at Checkout. */
+  fulfilment: v.union(
+    v.object({ method: v.literal("pickup"), location: v.string() }),
+    shownDelivery,
+  ),
   /** From `orderEvents`, oldest first. Who acted stays in the Back Office. */
   history: v.array(v.object({ kind: orderEventKind, at: v.number() })),
   /** Money owed back on this order: "Refund pending" until Staff send it, then "Refunded". */
@@ -69,7 +75,7 @@ export const mine = query({
         status: order.status,
         needsAction: customerNeedsToAct(order),
         past: isPastOrder(order),
-        ...(order.status === "ready" ? { pickupCode: order.pickupCode } : {}),
+        ...(handOverable(order) ? { pickupCode: order.pickupCode } : {}),
         lines: await orderLinesWithPhotos(ctx, order._id),
         payment: {
           amount: payment.amount,
@@ -77,7 +83,10 @@ export const mine = query({
           receiptNumber: payment.receiptNumber,
           receiptCode: payment.receiptCode,
         },
-        fulfilment: { method: order.fulfilment.method, location },
+        fulfilment:
+          order.fulfilment.method === "pickup"
+            ? { method: "pickup" as const, location }
+            : deliveryAsShown(order.fulfilment),
         history: (
           await ctx.db
             .query("orderEvents")

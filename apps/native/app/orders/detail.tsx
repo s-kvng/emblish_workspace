@@ -68,17 +68,39 @@ export default function OrderDetailScreen() {
             </View>
           </Section>
 
-          <Section title="Pickup">
-            <Text className="font-sans text-foreground">
-              {order.pickupLocation || "The pickup point"}
-            </Text>
-            <Text className="mt-2 font-sans text-muted text-xs uppercase tracking-[1px]">
-              Pickup Code
-            </Text>
-            <Text className="font-sans-bold text-[22px] text-brand-purple tracking-[4px]">
-              {order.pickupCode}
-            </Text>
-          </Section>
+          {order.fulfilment.method === "pickup" ? (
+            <Section title="Pickup">
+              <Text className="font-sans text-foreground">
+                {order.pickupLocation || "The pickup point"}
+              </Text>
+              <Text className="mt-2 font-sans text-muted text-xs uppercase tracking-[1px]">
+                Pickup Code
+              </Text>
+              <Text className="font-sans-bold text-[22px] text-brand-purple tracking-[4px]">
+                {order.pickupCode}
+              </Text>
+            </Section>
+          ) : (
+            <Section title={`Delivery · ${order.fulfilment.zoneName}`}>
+              <Text className="font-sans-semibold text-foreground">
+                {order.fulfilment.recipientName} · {order.fulfilment.recipientPhone}
+              </Text>
+              <Text className="font-sans text-foreground">
+                {[order.fulfilment.street, order.fulfilment.area].filter(Boolean).join(", ")}
+              </Text>
+              <Text className="font-sans text-foreground">Near {order.fulfilment.landmark}</Text>
+              {order.fulfilment.ghanaPostGps ? (
+                <Text className="font-sans text-muted text-sm">
+                  GPS {order.fulfilment.ghanaPostGps}
+                </Text>
+              ) : null}
+              <Text className="mt-2 font-sans text-muted text-sm">
+                {order.fulfilment.deliveryFee === undefined
+                  ? "Delivery Fee to be quoted (Elsewhere in Ghana)"
+                  : `Delivery Fee ${formatGhs(order.fulfilment.deliveryFee)}, paid at Checkout`}
+              </Text>
+            </Section>
+          )}
 
           <Section title="Items">
             {order.lines.map((line) => (

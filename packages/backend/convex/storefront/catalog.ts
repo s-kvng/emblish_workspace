@@ -4,6 +4,7 @@ import { v } from "convex/values";
 
 import { query } from "../_generated/server";
 import { listCategories } from "../model/categories";
+import { listZones, zoneAsShown } from "../model/deliveryZones";
 import { findStorefrontProduct, shelfCards, shelfVariants } from "../model/products";
 import { pickupLocation } from "../model/settings";
 import { productOption } from "../schema";
@@ -161,4 +162,20 @@ export const pickupPoint = query({
   args: {},
   returns: v.string(),
   handler: async (ctx) => await pickupLocation(ctx),
+});
+
+/** The Delivery Zones Checkout offers: active ones only, Elsewhere in Ghana last. */
+export const deliveryZones = query({
+  args: {},
+  returns: v.array(
+    v.object({
+      _id: v.id("deliveryZones"),
+      name: v.string(),
+      areas: v.string(),
+      /** Integer pesewas per order; missing on Elsewhere in Ghana, which is quoted later. */
+      fee: v.optional(v.number()),
+      isElsewhere: v.boolean(),
+    }),
+  ),
+  handler: async (ctx) => (await listZones(ctx)).filter((zone) => zone.active).map(zoneAsShown),
 });

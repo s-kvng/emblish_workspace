@@ -10,9 +10,11 @@
 
 import type * as auth from "../auth.js";
 import type * as backOffice_categories from "../backOffice/categories.js";
+import type * as backOffice_deliveryZones from "../backOffice/deliveryZones.js";
 import type * as backOffice_invitation from "../backOffice/invitation.js";
 import type * as backOffice_orders from "../backOffice/orders.js";
 import type * as backOffice_products from "../backOffice/products.js";
+import type * as backOffice_settings from "../backOffice/settings.js";
 import type * as backOffice_staff from "../backOffice/staff.js";
 import type * as backOffice_stock from "../backOffice/stock.js";
 import type * as healthCheck from "../healthCheck.js";
@@ -25,7 +27,9 @@ import type * as model_categories from "../model/categories.js";
 import type * as model_checkout from "../model/checkout.js";
 import type * as model_codes from "../model/codes.js";
 import type * as model_customers from "../model/customers.js";
+import type * as model_deliveryZones from "../model/deliveryZones.js";
 import type * as model_email from "../model/email.js";
+import type * as model_fulfilment from "../model/fulfilment.js";
 import type * as model_invitations from "../model/invitations.js";
 import type * as model_money from "../model/money.js";
 import type * as model_orders from "../model/orders.js";
@@ -61,9 +65,11 @@ import type {
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   "backOffice/categories": typeof backOffice_categories;
+  "backOffice/deliveryZones": typeof backOffice_deliveryZones;
   "backOffice/invitation": typeof backOffice_invitation;
   "backOffice/orders": typeof backOffice_orders;
   "backOffice/products": typeof backOffice_products;
+  "backOffice/settings": typeof backOffice_settings;
   "backOffice/staff": typeof backOffice_staff;
   "backOffice/stock": typeof backOffice_stock;
   healthCheck: typeof healthCheck;
@@ -76,7 +82,9 @@ declare const fullApi: ApiFromModules<{
   "model/checkout": typeof model_checkout;
   "model/codes": typeof model_codes;
   "model/customers": typeof model_customers;
+  "model/deliveryZones": typeof model_deliveryZones;
   "model/email": typeof model_email;
+  "model/fulfilment": typeof model_fulfilment;
   "model/invitations": typeof model_invitations;
   "model/money": typeof model_money;
   "model/orders": typeof model_orders;

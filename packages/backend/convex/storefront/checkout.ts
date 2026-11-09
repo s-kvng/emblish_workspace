@@ -2,11 +2,11 @@ import { ConvexError, v } from "convex/values";
 
 import { internal } from "../_generated/api";
 import type { Doc } from "../_generated/dataModel";
-import { action, mutation, query, type QueryCtx } from "../_generated/server";
+import { action, mutation, type QueryCtx, query } from "../_generated/server";
 import { requireCustomer, requireIdentity } from "../lib/guards";
-import { endCheckout, findOwnCheckout, startCheckout } from "../model/checkout";
+import { endCheckout, findOwnCheckout, orderCount, startCheckout } from "../model/checkout";
 import { createSession, SeevUnavailable } from "../model/seev";
-import { checkoutLine, checkoutStatus } from "../schema";
+import { checkoutLine, checkoutStatus, fulfilment, fulfilmentRequest } from "../schema";
 
 /** The signed-in Customer's own Checkout, or NOT_FOUND. */
 async function ownCheckout(
@@ -25,13 +25,15 @@ async function ownCheckout(
 export const start = mutation({
   args: {
     lines: v.array(v.object({ variantId: v.id("variants"), quantity: v.number() })),
-    /** Asked once, at the Pickup step of the Customer's first Checkout. */
+    /** Asked once, at the Pickup or Delivery step of the Customer's first Checkout. */
     name: v.optional(v.string()),
+    /** Pickup when left out. */
+    fulfilment: v.optional(fulfilmentRequest),
   },
   returns: v.object({ checkoutId: v.id("checkouts") }),
-  handler: async (ctx, { lines, name }) => {
+  handler: async (ctx, { lines, name, fulfilment }) => {
     const customer = await requireCustomer(ctx);
-    return { checkoutId: await startCheckout(ctx, customer, lines, name) };
+    return { checkoutId: await startCheckout(ctx, customer, lines, name, fulfilment) };
   },
 });
 
@@ -122,6 +124,10 @@ export const get = query({
     expiresAt: v.number(),
     total: v.number(),
     lines: v.array(checkoutLine),
+    /** Frozen at Pay, with its per-order Delivery Fee. */
+    fulfilment,
+    /** How many orders it becomes, each delivered (and charged) separately. */
+    orderCount: v.number(),
     /** Set once a payment has settled it: the Receipt's `/r/` code. */
     receiptCode: v.optional(v.string()),
   }),
@@ -137,6 +143,8 @@ export const get = query({
       expiresAt: checkout.expiresAt,
       total: checkout.total,
       lines: checkout.lines,
+      fulfilment: checkout.fulfilment,
+      orderCount: orderCount(checkout.lines),
       receiptCode: payment?.receiptCode,
     };
   },

@@ -52,6 +52,46 @@ export const smsTemplates = {
     },
     redact: (body) => body.replace(/Pickup Code \d{6}/, "Pickup Code ******"),
   }),
+  // As paymentConfirmed, for a Store Order going to a fixed Delivery Zone: no Pickup Code.
+  paymentConfirmedDelivery: template<{
+    amount: number;
+    reference: string;
+    zoneName: string;
+    receiptUrl: string;
+    refund?: number;
+  }>({
+    render: ({ amount, reference, zoneName, receiptUrl, refund }) =>
+      `Emblish: payment of ${ghs(amount)} received. Order ${reference} will be delivered to ` +
+      `${zoneName}. We will text you when it is on its way. Receipt: ${receiptUrl}` +
+      (refund ? ` ${ghs(refund)} of it could not be filled and will be refunded.` : ""),
+    example: {
+      amount: 48000,
+      reference: "S-0310",
+      zoneName: "Accra Central",
+      receiptUrl: "https://emblish.com/r/7KQ2MX9P",
+      refund: 12000,
+    },
+  }),
+  // As paymentConfirmed, for Delivery Elsewhere in Ghana: the fee is quoted later.
+  paymentConfirmedQuoteDelivery: template<{
+    amount: number;
+    reference: string;
+    zoneName: string;
+    receiptUrl: string;
+    refund?: number;
+  }>({
+    render: ({ amount, reference, zoneName, receiptUrl, refund }) =>
+      `Emblish: payment of ${ghs(amount)} received for order ${reference}. We will text you ` +
+      `the delivery fee to ${zoneName}. Receipt: ${receiptUrl}` +
+      (refund ? ` ${ghs(refund)} of it could not be filled and will be refunded.` : ""),
+    example: {
+      amount: 45000,
+      reference: "S-0310",
+      zoneName: "Elsewhere in Ghana",
+      receiptUrl: "https://emblish.com/r/7KQ2MX9P",
+      refund: 12000,
+    },
+  }),
   // A late charge Stock couldn't fill at all: nothing to pick up, all of it refunded.
   paymentNotFilled: template({
     render: ({ amount, receiptUrl }: { amount: number; receiptUrl: string }) =>

@@ -15,7 +15,10 @@ export default function More() {
   const staffMember = useStaffMember();
 
   return (
-    <PlaceholderScreen title="More" description="Stock and Delivery Zones.">
+    <PlaceholderScreen
+      title="More"
+      description="Stock, Products, Delivery Zones and store settings."
+    >
       <MoreLink
         href="/stock"
         icon="cube"
@@ -27,6 +30,18 @@ export default function More() {
         icon="pricetags"
         title="Products"
         detail="Create, publish and archive Products; Categories"
+      />
+      <MoreLink
+        href="/delivery-zones"
+        icon="bicycle"
+        title="Delivery Zones"
+        detail="Where we deliver and each zone's fee"
+      />
+      <MoreLink
+        href="/store-settings"
+        icon="storefront"
+        title="Store settings"
+        detail="Pickup point and hours, WhatsApp and call numbers"
       />
       {staffMember?.role === "owner" ? (
         <MoreLink
@@ -64,7 +79,7 @@ function MoreLink({
   title,
   detail,
 }: {
-  href: "/products" | "/staff" | "/stock";
+  href: "/delivery-zones" | "/products" | "/staff" | "/stock" | "/store-settings";
   icon: ComponentProps<typeof Ionicons>["name"];
   title: string;
   detail: string;

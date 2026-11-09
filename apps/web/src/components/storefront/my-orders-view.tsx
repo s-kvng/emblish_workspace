@@ -46,6 +46,18 @@ const eventLabel: Record<Card["history"][number]["kind"], string> = {
   collected: "Collected",
 };
 
+/** The status line, worded for how the order reaches the Customer. */
+function statusText(card: Card) {
+  if (card.fulfilment.method === "delivery") {
+    if (card.status === "ready") return "Ready for delivery";
+    // Elsewhere in Ghana: placed before Staff have quoted its Delivery Fee.
+    if (card.status === "paymentDue" && card.fulfilment.deliveryFee === undefined) {
+      return "Waiting for our delivery quote";
+    }
+  }
+  return statusLabel[card.status];
+}
+
 function day(at: number) {
   return new Date(at).toLocaleDateString("en-GH", { day: "numeric", month: "short" });
 }
@@ -175,10 +187,10 @@ export default function MyOrdersView() {
   );
 }
 
-/** The horizontal dot tracker. Store Orders: Paid → Ready → Collected. */
+/** The horizontal dot tracker. Store Orders: Paid → Ready → Collected (or Delivered). */
 function Tracker({ card }: { card: Card }) {
   const ended = card.status === "cancelled" || card.status === "forfeited";
-  const dots = ["Paid", "Ready", "Collected"];
+  const dots = ["Paid", "Ready", card.fulfilment.method === "delivery" ? "Delivered" : "Collected"];
   const reached = ended
     ? 0
     : card.status === "collected" || card.status === "delivered"
@@ -224,7 +236,7 @@ function Tracker({ card }: { card: Card }) {
         })}
       </ol>
       <p className={`mt-2 font-semibold text-sm ${ended ? "text-muted-foreground" : ""}`}>
-        {statusLabel[card.status]}
+        {statusText(card)}
       </p>
     </div>
   );
@@ -344,7 +356,9 @@ function CardDetail({ card }: { card: Card }) {
           <p className="my-1 font-mono font-semibold text-4xl tracking-[0.3em]">
             {card.pickupCode}
           </p>
-          <p className="whitespace-pre-line text-white/70 text-xs">{card.fulfilment.location}</p>
+          {card.fulfilment.method === "pickup" && (
+            <p className="whitespace-pre-line text-white/70 text-xs">{card.fulfilment.location}</p>
+          )}
         </div>
       )}
 
@@ -394,12 +408,28 @@ function CardDetail({ card }: { card: Card }) {
       )}
 
       <Section title="How you get it">
-        <p className="text-sm">
-          Pickup
-          <span className="block whitespace-pre-line text-muted-foreground text-xs">
-            {card.fulfilment.location}
-          </span>
-        </p>
+        {card.fulfilment.method === "pickup" ? (
+          <p className="text-sm">
+            Pickup
+            <span className="block whitespace-pre-line text-muted-foreground text-xs">
+              {card.fulfilment.location}
+            </span>
+          </p>
+        ) : (
+          <p className="text-sm">
+            Delivery · {card.fulfilment.zoneName}
+            <span className="block text-muted-foreground text-xs">
+              To {card.fulfilment.recipientName} ({card.fulfilment.recipientPhone}),{" "}
+              {[card.fulfilment.street, card.fulfilment.area].filter(Boolean).join(", ")}, near{" "}
+              {card.fulfilment.landmark}
+            </span>
+            <span className="block text-muted-foreground text-xs">
+              {card.fulfilment.deliveryFee === undefined
+                ? "Delivery Fee: we'll text you a quote"
+                : `Delivery Fee ${cedi(card.fulfilment.deliveryFee)}, paid`}
+            </span>
+          </p>
+        )}
       </Section>
 
       <Section title="History">

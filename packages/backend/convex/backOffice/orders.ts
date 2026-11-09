@@ -2,13 +2,14 @@ import { ConvexError, v } from "convex/values";
 
 import { mutation, query } from "../_generated/server";
 import { requireStaff } from "../lib/guards";
+import { fulfilmentAsShown, shownFulfilment } from "../model/fulfilment";
 import {
   alsoReady,
   customerContact,
   findCustomerForSearch,
   findOpenOrderByCode,
-  handOver as handOverOrders,
   handOverable,
+  handOver as handOverOrders,
   orderHistory,
   orderLines,
   owedBack,
@@ -95,7 +96,8 @@ export const get = query({
     status: orderStatus,
     placedAt: v.number(),
     customer: v.object({ name: v.optional(v.string()), phone: v.string() }),
-    fulfilment: v.literal("pickup"),
+    /** Pickup, or Delivery with the zone, frozen fee and address from Checkout. */
+    fulfilment: shownFulfilment,
     pickupLocation: v.string(),
     pickupCode: v.string(),
     lines: v.array(line),
@@ -138,7 +140,7 @@ export const get = query({
       status: order.status,
       placedAt: order.placedAt,
       customer: customerContact(customer),
-      fulfilment: order.fulfilment.method,
+      fulfilment: fulfilmentAsShown(order.fulfilment),
       pickupLocation: await pickupLocation(ctx),
       pickupCode: order.pickupCode,
       lines: await orderLines(ctx, order._id),

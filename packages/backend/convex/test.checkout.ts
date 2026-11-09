@@ -113,3 +113,32 @@ export async function paidOrder(
     return { orderId: order._id, reference: order.reference, pickupCode: order.pickupCode };
   });
 }
+
+/**
+ * Delivery Zones on a test backend: Accra Central (GHS 30), a disabled Tema (GHS 45),
+ * and Elsewhere in Ghana with no fee.
+ */
+export async function withZones(t: TestBackend) {
+  return await t.run(async (ctx) => ({
+    accra: await ctx.db.insert("deliveryZones", {
+      name: "Accra Central",
+      areas: "Osu, Labone, Cantonments",
+      fee: 3000,
+      isElsewhere: false,
+      active: true,
+    }),
+    tema: await ctx.db.insert("deliveryZones", {
+      name: "Tema",
+      areas: "Community 1-25",
+      fee: 4500,
+      isElsewhere: false,
+      active: false,
+    }),
+    elsewhere: await ctx.db.insert("deliveryZones", {
+      name: "Elsewhere in Ghana",
+      areas: "Anywhere else",
+      isElsewhere: true,
+      active: true,
+    }),
+  }));
+}
