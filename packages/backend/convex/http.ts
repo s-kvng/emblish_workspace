@@ -4,6 +4,7 @@ import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
 import { authComponent, createAuth, nativeAppUrl } from "./auth";
 import { deliveryPath, verifyDeliverySignature } from "./model/arkesel";
+import { verifyWebhookSignature, webhookPath } from "./model/seev";
 
 const http = httpRouter();
 
@@ -53,5 +54,43 @@ const arkeselDelivery = httpAction(async (ctx, request) => {
 });
 http.route({ path: deliveryPath, method: "POST", handler: arkeselDelivery });
 http.route({ path: deliveryPath, method: "GET", handler: arkeselDelivery });
+
+// Seev's webhook (ADR 0003). It's signed over the raw body, so that's checked before parsing.
+// Seev gives a delivery 8 seconds and never retries, so we answer at once and verify the
+// payment with Seev afterwards; polling catches any delivery that never arrives.
+http.route({
+  path: webhookPath,
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const secret = process.env.SEEV_WEBHOOK_SECRET;
+    if (!secret) {
+      console.error("Set SEEV_WEBHOOK_SECRET on the Convex deployment to accept Seev webhooks.");
+      return new Response("Not configured", { status: 500 });
+    }
+    const rawBody = await request.text();
+    const verified = await verifyWebhookSignature(
+      {
+        rawBody,
+        timestamp: request.headers.get("X-Seev-Timestamp"),
+        signature: request.headers.get("X-Seev-Signature"),
+      },
+      secret,
+    );
+    if (!verified) return new Response("Bad signature", { status: 401 });
+
+    let event: { event?: string; data?: { transaction?: { reference?: string } } };
+    try {
+      event = JSON.parse(rawBody);
+    } catch {
+      return new Response("Not JSON", { status: 400 });
+    }
+    const reference = event.data?.transaction?.reference;
+    // `payment.failed` needs nothing: the Checkout stays open until it expires.
+    if (event.event === "payment.succeeded" && reference) {
+      await ctx.scheduler.runAfter(0, internal.system.seev.verify, { reference });
+    }
+    return new Response(null, { status: 200 });
+  }),
+});
 
 export default http;

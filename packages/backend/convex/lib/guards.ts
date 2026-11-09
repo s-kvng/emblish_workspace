@@ -1,3 +1,4 @@
+import type { UserIdentity } from "convex/server";
 import { ConvexError } from "convex/values";
 
 import type { Doc } from "../_generated/dataModel";
@@ -27,8 +28,11 @@ export async function requireStaff(ctx: GuardCtx): Promise<Doc<"staff">> {
   return staff;
 }
 
-/** Opens every signed-in `storefront/` function: the caller must be a Customer. */
-export async function requireCustomer(ctx: GuardCtx): Promise<Doc<"customers">> {
+/**
+ * The signed-in caller's identity, for a Storefront action: actions can't read the database,
+ * so each hands `identity.subject` to an internal query that finishes the Customer check.
+ */
+export async function requireIdentity(ctx: Pick<QueryCtx, "auth">): Promise<UserIdentity> {
   const identity = await ctx.auth.getUserIdentity();
   if (!identity) {
     throw new ConvexError({
@@ -36,6 +40,12 @@ export async function requireCustomer(ctx: GuardCtx): Promise<Doc<"customers">> 
       message: "Sign in with your phone number to continue.",
     });
   }
+  return identity;
+}
+
+/** Opens every signed-in `storefront/` function: the caller must be a Customer. */
+export async function requireCustomer(ctx: GuardCtx): Promise<Doc<"customers">> {
+  const identity = await requireIdentity(ctx);
   const customer = await getCustomer(ctx, identity.subject);
   if (!customer) {
     throw new ConvexError({

@@ -1,7 +1,7 @@
 "use client";
-// A placeholder Bag kept in this browser until the Checkout ticket gives it a server side.
+// The Bag lives in this browser until Pay submits it as a Checkout.
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 
 export type BagLine = { variantId: string; slug: string; quantity: number };
 
@@ -10,6 +10,10 @@ type Bag = {
   count: number;
   /** Adds units of a Variant, never more than `limit` of it in all. */
   add: (line: BagLine, limit: number) => { added: number; inBag: number };
+  /** Sets a line's quantity; 0 removes it. */
+  setQuantity: (variantId: string, quantity: number) => void;
+  /** Empties the Bag, once a payment has turned it into an order. */
+  clear: () => void;
 };
 
 const STORAGE_KEY = "emblish.bag";
@@ -29,24 +33,37 @@ export function BagProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => setLines(readStored()), []);
 
-  const add: Bag["add"] = (line, limit) => {
-    const held = lines.find((current) => current.variantId === line.variantId)?.quantity ?? 0;
-    const quantity = Math.min(limit, held + line.quantity);
-    const next = [
-      ...lines.filter((current) => current.variantId !== line.variantId),
-      { ...line, quantity },
-    ];
+  const save = useCallback((next: BagLine[]) => {
     setLines(next);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     } catch {
       // Private windows can refuse storage; the Bag still works until the page reloads.
     }
+  }, []);
+
+  const add: Bag["add"] = (line, limit) => {
+    const held = lines.find((current) => current.variantId === line.variantId)?.quantity ?? 0;
+    const quantity = Math.min(limit, held + line.quantity);
+    save([
+      ...lines.filter((current) => current.variantId !== line.variantId),
+      { ...line, quantity },
+    ]);
     return { added: Math.max(0, quantity - held), inBag: quantity };
   };
 
+  const setQuantity: Bag["setQuantity"] = (variantId, quantity) =>
+    save(
+      quantity > 0
+        ? lines.map((line) => (line.variantId === variantId ? { ...line, quantity } : line))
+        : lines.filter((line) => line.variantId !== variantId),
+    );
+
+  // Stable, so an effect can depend on it without re-running on every render.
+  const clear = useCallback(() => save([]), [save]);
+
   const count = lines.reduce((sum, line) => sum + line.quantity, 0);
-  return <BagContext value={{ lines, count, add }}>{children}</BagContext>;
+  return <BagContext value={{ lines, count, add, setQuantity, clear }}>{children}</BagContext>;
 }
 
 export function useBag(): Bag {

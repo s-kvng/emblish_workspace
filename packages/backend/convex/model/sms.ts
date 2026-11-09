@@ -4,6 +4,7 @@ import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import type { smsTemplate } from "../schema";
+import { ghs } from "./money";
 
 /**
  * Every SMS a Customer gets is rendered from one of these templates. They follow the
@@ -29,6 +30,41 @@ export const smsTemplates = {
       `Your Emblish code is ${code}. It expires in 5 minutes. Never share it.`,
     example: { code: "482913" },
     redact: (body) => body.replace(/\d{6}/, "******"),
+  }),
+  // One per charge that created a Store Order; `refund` is any part Stock couldn't fill.
+  paymentConfirmed: template<{
+    amount: number;
+    reference: string;
+    pickupCode: string;
+    receiptUrl: string;
+    refund?: number;
+  }>({
+    render: ({ amount, reference, pickupCode, receiptUrl, refund }) =>
+      `Emblish: payment of ${ghs(amount)} received. Order ${reference} is ready for pickup. ` +
+      `Pickup Code ${pickupCode}. Receipt: ${receiptUrl}` +
+      (refund ? ` ${ghs(refund)} of it could not be filled and will be refunded.` : ""),
+    example: {
+      amount: 45000,
+      reference: "S-0310",
+      pickupCode: "482913",
+      receiptUrl: "https://emblish.com/r/7KQ2MX9P",
+      refund: 12000,
+    },
+    redact: (body) => body.replace(/Pickup Code \d{6}/, "Pickup Code ******"),
+  }),
+  // A late charge Stock couldn't fill at all: nothing to pick up, all of it refunded.
+  paymentNotFilled: template({
+    render: ({ amount, receiptUrl }: { amount: number; receiptUrl: string }) =>
+      `Emblish: payment of ${ghs(amount)} received, but your items sold out before it came ` +
+      `through. We will refund ${ghs(amount)}. Receipt: ${receiptUrl}`,
+    example: { amount: 45000, receiptUrl: "https://emblish.com/r/7KQ2MX9P" },
+  }),
+  // A charge we couldn't match to an order: a second payment, or a wrong amount.
+  paymentUnmatched: template({
+    render: ({ amount, receiptUrl }: { amount: number; receiptUrl: string }) =>
+      `Emblish: we received ${ghs(amount)}, but it doesn't match an order to fill. ` +
+      `We will refund it. Receipt: ${receiptUrl}`,
+    example: { amount: 45000, receiptUrl: "https://emblish.com/r/7KQ2MX9P" },
   }),
 };
 

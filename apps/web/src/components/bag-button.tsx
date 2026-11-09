@@ -1,15 +1,16 @@
 "use client";
 
 import { ShoppingBag } from "lucide-react";
+import Link from "next/link";
 
 import { useBag } from "@/lib/bag";
 
-/** The header's Bag with its unit count; it opens nothing until Checkout lands. */
+/** The header's Bag with its unit count; it opens the Checkout's first step. */
 export default function BagButton() {
   const { count } = useBag();
   return (
-    <button
-      type="button"
+    <Link
+      href="/checkout"
       aria-label={count > 0 ? `Bag, ${count} in it` : "Bag"}
       className="relative grid size-10 place-items-center rounded-full hover:bg-secondary"
     >
@@ -19,6 +20,6 @@ export default function BagButton() {
           {count}
         </span>
       )}
-    </button>
+    </Link>
   );
 }

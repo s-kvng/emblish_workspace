@@ -12,6 +12,8 @@ export default defineConfig({
       EMAIL_FROM: "Emblish <no-reply@emblish.test>",
       ARKESEL_API_KEY: "arkesel-test-key",
       ARKESEL_WEBHOOK_SECRET: "arkesel-test-webhook-secret",
+      SEEV_CHECKOUT_API_KEY: "seev-test-checkout-key",
+      SEEV_WEBHOOK_SECRET: "seev-test-webhook-secret",
     },
   },
 });
