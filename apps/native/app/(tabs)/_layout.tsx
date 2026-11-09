@@ -1,6 +1,6 @@
 import { brand } from "@emblish_workspace/brand/tokens";
 import { Ionicons } from "@expo/vector-icons";
-import { Tabs } from "expo-router";
+import { router, Tabs } from "expo-router";
 import type { BottomTabBarButtonProps } from "expo-router/tabs";
 import { type ComponentProps, useEffect } from "react";
 import { type ColorValue, Pressable, Text, View } from "react-native";
@@ -8,15 +8,15 @@ import { type ColorValue, Pressable, Text, View } from "react-native";
 import { authClient } from "@/lib/auth-client";
 import { useStaffMember } from "@/lib/staff-member";
 
-/** The raised emblem-gold centre button that opens handover from any tab. */
-function HandOverButton({ onPress, "aria-selected": selected }: BottomTabBarButtonProps) {
+/** The raised emblem-gold centre button: it opens the Counter over whichever tab is showing. */
+function HandOverButton({ "aria-selected": selected }: BottomTabBarButtonProps) {
   const focused = selected ?? false;
 
   return (
     <Pressable
-      onPress={onPress}
-      accessibilityRole="tab"
-      accessibilityLabel="Hand over"
+      onPress={() => router.push("/counter")}
+      accessibilityRole="button"
+      accessibilityLabel="Hand over: open the Counter"
       aria-selected={focused}
       className="flex-1 items-center"
     >

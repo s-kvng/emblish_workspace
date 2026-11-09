@@ -53,6 +53,12 @@ function StackLayout() {
         <Stack.Screen name="categories" />
         <Stack.Screen name="stock/index" />
         <Stack.Screen name="stock/variant" />
+        <Stack.Screen name="orders/detail" />
+        {/* The Counter slides up over any tab as a full-screen desk. */}
+        <Stack.Screen
+          name="counter"
+          options={{ presentation: "fullScreenModal", animation: "slide_from_bottom" }}
+        />
       </Stack.Protected>
       <Stack.Protected guard={!isAuthenticated}>
         <Stack.Screen name="sign-in" />

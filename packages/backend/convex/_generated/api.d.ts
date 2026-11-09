@@ -11,6 +11,7 @@
 import type * as auth from "../auth.js";
 import type * as backOffice_categories from "../backOffice/categories.js";
 import type * as backOffice_invitation from "../backOffice/invitation.js";
+import type * as backOffice_orders from "../backOffice/orders.js";
 import type * as backOffice_products from "../backOffice/products.js";
 import type * as backOffice_staff from "../backOffice/staff.js";
 import type * as backOffice_stock from "../backOffice/stock.js";
@@ -27,6 +28,7 @@ import type * as model_customers from "../model/customers.js";
 import type * as model_email from "../model/email.js";
 import type * as model_invitations from "../model/invitations.js";
 import type * as model_money from "../model/money.js";
+import type * as model_orders from "../model/orders.js";
 import type * as model_payments from "../model/payments.js";
 import type * as model_products from "../model/products.js";
 import type * as model_seev from "../model/seev.js";
@@ -59,6 +61,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   "backOffice/categories": typeof backOffice_categories;
   "backOffice/invitation": typeof backOffice_invitation;
+  "backOffice/orders": typeof backOffice_orders;
   "backOffice/products": typeof backOffice_products;
   "backOffice/staff": typeof backOffice_staff;
   "backOffice/stock": typeof backOffice_stock;
@@ -75,6 +78,7 @@ declare const fullApi: ApiFromModules<{
   "model/email": typeof model_email;
   "model/invitations": typeof model_invitations;
   "model/money": typeof model_money;
+  "model/orders": typeof model_orders;
   "model/payments": typeof model_payments;
   "model/products": typeof model_products;
   "model/seev": typeof model_seev;
