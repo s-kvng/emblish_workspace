@@ -77,6 +77,20 @@ export const orderStatus = v.union(
 );
 /** Statuses where an order's goods are still to be handed over, so its Pickup Code is live. */
 export const openOrderStatuses = ["awaitingArrival", "paymentDue", "ready", "dispatched"] as const;
+/** Why Staff handed over without the Pickup Code, after checking ID. */
+export const overrideReason = v.union(
+  v.literal("lostSms"),
+  v.literal("collectingForSomeone"),
+  v.literal("phoneDead"),
+  v.literal("other"),
+);
+/** Every kind of `orderEvents` row; more join with the actions that write them. */
+export const orderEventKind = v.union(v.literal("paid"), v.literal("collected"));
+/** Who did something to an order: a Staff member, or the system (such as a verified payment). */
+export const orderActor = v.union(
+  v.object({ kind: v.literal("staff"), staffId: v.id("staff") }),
+  v.object({ kind: v.literal("system") }),
+);
 export const refundKind = v.union(
   v.literal("shortfall"),
   v.literal("latePaid"),
@@ -286,6 +300,7 @@ export default defineSchema({
     .index("by_reference", ["reference"])
     .index("by_customer", ["customerId"])
     .index("by_payment", ["paymentId"])
+    .index("by_status", ["status"])
     .index("by_pickupCode_and_status", ["pickupCode", "status"]),
 
   // An order's lines, with names and prices frozen at payment.
@@ -296,6 +311,17 @@ export default defineSchema({
     variantLabel: v.string(),
     unitPrice: v.number(),
     quantity: v.number(),
+  }).index("by_order", ["orderId"]),
+
+  // Append-only: one row per order action, the audit trail and the order's History.
+  // More kinds (dispatch, cancel units, refund…) are added with the actions that write them.
+  orderEvents: defineTable({
+    orderId: v.id("orders"),
+    kind: orderEventKind,
+    actor: orderActor,
+    /** Set on a handover without the Pickup Code. */
+    overrideReason: v.optional(overrideReason),
+    note: v.optional(v.string()),
   }).index("by_order", ["orderId"]),
 
   // Money owed back to a Customer from one payment. Paying it out comes with the refunds ticket.

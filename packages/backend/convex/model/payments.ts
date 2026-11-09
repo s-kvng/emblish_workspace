@@ -131,6 +131,7 @@ async function createStoreOrder(
     status: "ready",
     readyAt: now,
   });
+  await ctx.db.insert("orderEvents", { orderId, kind: "paid", actor: { kind: "system" } });
   for (const line of lines) {
     await ctx.db.insert("orderLines", {
       orderId,
