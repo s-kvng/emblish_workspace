@@ -40,6 +40,7 @@ import type * as model_stock from "../model/stock.js";
 import type * as storefront_catalog from "../storefront/catalog.js";
 import type * as storefront_checkout from "../storefront/checkout.js";
 import type * as storefront_customer from "../storefront/customer.js";
+import type * as storefront_orders from "../storefront/orders.js";
 import type * as storefront_receipts from "../storefront/receipts.js";
 import type * as system_bootstrap from "../system/bootstrap.js";
 import type * as system_checkout from "../system/checkout.js";
@@ -90,6 +91,7 @@ declare const fullApi: ApiFromModules<{
   "storefront/catalog": typeof storefront_catalog;
   "storefront/checkout": typeof storefront_checkout;
   "storefront/customer": typeof storefront_customer;
+  "storefront/orders": typeof storefront_orders;
   "storefront/receipts": typeof storefront_receipts;
   "system/bootstrap": typeof system_bootstrap;
   "system/checkout": typeof system_checkout;

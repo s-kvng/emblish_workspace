@@ -49,9 +49,45 @@ export async function orderLines(ctx: Pick<QueryCtx, "db">, orderId: Id<"orders"
   }));
 }
 
+/** An order's lines as My orders shows them, each with the Variant's photo, else the cover. */
+export async function orderLinesWithPhotos(
+  ctx: Pick<QueryCtx, "db" | "storage">,
+  orderId: Id<"orders">,
+) {
+  const lines = await ctx.db
+    .query("orderLines")
+    .withIndex("by_order", (q) => q.eq("orderId", orderId))
+    .collect();
+  const shown = [];
+  for (const { variantId, productName, variantLabel, quantity, unitPrice } of lines) {
+    const variant = await ctx.db.get(variantId);
+    const product = variant && (await ctx.db.get(variant.productId));
+    const imageId = variant?.imageId ?? product?.gallery[0];
+    const imageUrl = imageId ? await ctx.storage.getUrl(imageId) : null;
+    shown.push({
+      productName,
+      variantLabel,
+      quantity,
+      unitPrice,
+      ...(imageUrl ? { imageUrl } : {}),
+    });
+  }
+  return shown;
+}
+
 /** Whether an order can be handed over at the Counter now: Ready, for Pickup. */
 export function handOverable(order: Doc<"orders">) {
   return order.status === "ready" && order.fulfilment.method === "pickup";
+}
+
+/** Handed over or ended: nothing more will happen to it, so My orders files it under Past. */
+export function isPastOrder(order: Doc<"orders">) {
+  return !(openOrderStatuses as readonly OrderStatus[]).includes(order.status);
+}
+
+/** Whether My orders puts it at the top: a Pickup Code to show now (an invoice to pay, later). */
+export function customerNeedsToAct(order: Doc<"orders">) {
+  return handOverable(order);
 }
 
 /** The Customer's other orders waiting at the Counter, oldest first. */
@@ -143,14 +179,19 @@ export async function orderHistory(ctx: Pick<QueryCtx, "db">, orderId: Id<"order
   return history;
 }
 
-/** Pesewas flagged for refund against this order and not yet refunded. */
-export async function owedBack(ctx: Pick<QueryCtx, "db">, order: Doc<"orders">) {
+/** The refunds flagged against this order (its payment may carry others). */
+export async function refundsOnOrder(ctx: Pick<QueryCtx, "db">, order: Doc<"orders">) {
   const refunds = await ctx.db
     .query("refunds")
     .withIndex("by_payment", (q) => q.eq("paymentId", order.paymentId))
     .collect();
-  return refunds
-    .filter((refund) => refund.orderId === order._id && refund.status !== "refunded")
+  return refunds.filter((refund) => refund.orderId === order._id);
+}
+
+/** Pesewas flagged for refund against this order and not yet refunded. */
+export async function owedBack(ctx: Pick<QueryCtx, "db">, order: Doc<"orders">) {
+  return (await refundsOnOrder(ctx, order))
+    .filter((refund) => refund.status !== "refunded")
     .reduce((sum, refund) => sum + refund.amount, 0);
 }
 
