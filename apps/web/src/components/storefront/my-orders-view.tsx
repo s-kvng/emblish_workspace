@@ -44,7 +44,22 @@ const refundReason: Record<Card["refunds"][number]["reason"], string> = {
 const eventLabel: Record<Card["history"][number]["kind"], string> = {
   paid: "Paid",
   collected: "Collected",
+  dispatched: "Out for delivery",
+  delivered: "Delivered",
+  deliveryFailed: "Delivery attempt missed",
 };
+
+/** The status line, worded for how the order reaches the Customer. */
+function statusText(card: Card) {
+  if (card.fulfilment.method === "delivery") {
+    if (card.status === "ready") return "Ready for delivery";
+    // Elsewhere in Ghana: placed before Staff have quoted its Delivery Fee.
+    if (card.status === "paymentDue" && card.fulfilment.deliveryFee === undefined) {
+      return "Waiting for our delivery quote";
+    }
+  }
+  return statusLabel[card.status];
+}
 
 function day(at: number) {
   return new Date(at).toLocaleDateString("en-GH", { day: "numeric", month: "short" });
@@ -175,20 +190,28 @@ export default function MyOrdersView() {
   );
 }
 
-/** The horizontal dot tracker. Store Orders: Paid → Ready → Collected. */
+/**
+ * The horizontal dot tracker. Store Orders: Paid → Ready → Collected, or for Delivery
+ * Paid → Ready → Out for delivery → Delivered.
+ */
 function Tracker({ card }: { card: Card }) {
   const ended = card.status === "cancelled" || card.status === "forfeited";
-  const dots = ["Paid", "Ready", "Collected"];
+  const delivery = card.fulfilment.method === "delivery";
+  const dots = delivery
+    ? ["Paid", "Ready", "Out for delivery", "Delivered"]
+    : ["Paid", "Ready", "Collected"];
   const reached = ended
     ? 0
     : card.status === "collected" || card.status === "delivered"
-      ? 3
-      : card.status === "ready" || card.status === "dispatched"
-        ? 2
-        : 1;
+      ? dots.length
+      : card.status === "dispatched"
+        ? 3
+        : card.status === "ready"
+          ? 2
+          : 1;
   return (
     <div>
-      <ol className="grid grid-cols-3" aria-label="Progress">
+      <ol className={`grid ${delivery ? "grid-cols-4" : "grid-cols-3"}`} aria-label="Progress">
         {dots.map((dot, i) => {
           const done = i < reached;
           const current = i === reached - 1;
@@ -224,7 +247,7 @@ function Tracker({ card }: { card: Card }) {
         })}
       </ol>
       <p className={`mt-2 font-semibold text-sm ${ended ? "text-muted-foreground" : ""}`}>
-        {statusLabel[card.status]}
+        {statusText(card)}
       </p>
     </div>
   );
@@ -344,7 +367,9 @@ function CardDetail({ card }: { card: Card }) {
           <p className="my-1 font-mono font-semibold text-4xl tracking-[0.3em]">
             {card.pickupCode}
           </p>
-          <p className="whitespace-pre-line text-white/70 text-xs">{card.fulfilment.location}</p>
+          {card.fulfilment.method === "pickup" && (
+            <p className="whitespace-pre-line text-white/70 text-xs">{card.fulfilment.location}</p>
+          )}
         </div>
       )}
 
@@ -394,12 +419,28 @@ function CardDetail({ card }: { card: Card }) {
       )}
 
       <Section title="How you get it">
-        <p className="text-sm">
-          Pickup
-          <span className="block whitespace-pre-line text-muted-foreground text-xs">
-            {card.fulfilment.location}
-          </span>
-        </p>
+        {card.fulfilment.method === "pickup" ? (
+          <p className="text-sm">
+            Pickup
+            <span className="block whitespace-pre-line text-muted-foreground text-xs">
+              {card.fulfilment.location}
+            </span>
+          </p>
+        ) : (
+          <p className="text-sm">
+            Delivery · {card.fulfilment.zoneName}
+            <span className="block text-muted-foreground text-xs">
+              To {card.fulfilment.recipientName} ({card.fulfilment.recipientPhone}),{" "}
+              {[card.fulfilment.street, card.fulfilment.area].filter(Boolean).join(", ")}, near{" "}
+              {card.fulfilment.landmark}
+            </span>
+            <span className="block text-muted-foreground text-xs">
+              {card.fulfilment.deliveryFee === undefined
+                ? "Delivery Fee: we'll text you a quote"
+                : `Delivery Fee ${cedi(card.fulfilment.deliveryFee)}, paid`}
+            </span>
+          </p>
+        )}
       </Section>
 
       <Section title="History">

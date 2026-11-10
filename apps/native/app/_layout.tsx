@@ -51,6 +51,8 @@ function StackLayout() {
         <Stack.Screen name="products/index" />
         <Stack.Screen name="products/edit" options={{ gestureEnabled: false }} />
         <Stack.Screen name="categories" />
+        <Stack.Screen name="delivery-zones" />
+        <Stack.Screen name="store-settings" />
         <Stack.Screen name="stock/index" />
         <Stack.Screen name="stock/variant" />
         <Stack.Screen name="orders/detail" />

@@ -2,8 +2,9 @@ import { v } from "convex/values";
 
 import { internal } from "../_generated/api";
 import { internalMutation, internalQuery } from "../_generated/server";
-import { endCheckout, findOwnCheckout } from "../model/checkout";
+import { endCheckout, findOwnCheckout, orderCount } from "../model/checkout";
 import { getCustomer } from "../model/customers";
+import { deliveryFeeToday } from "../model/fulfilment";
 import { settlePayment } from "../model/payments";
 import { pollEveryMs } from "./seev";
 
@@ -47,16 +48,26 @@ export const paymentRequest = internalQuery({
       .query("paymentSessions")
       .withIndex("by_checkout", (q) => q.eq("checkoutId", checkout._id))
       .collect();
+    const items = checkout.lines.map((line) => ({
+      name: line.variantLabel ? `${line.productName} (${line.variantLabel})` : line.productName,
+      quantity: line.quantity,
+      price: line.unitPrice,
+    }));
+    // A fixed-zone Delivery Fee is paid now, one per order, as its own line.
+    const fee = deliveryFeeToday(checkout.fulfilment);
+    if (fee > 0 && checkout.fulfilment.method === "delivery") {
+      items.push({
+        name: `Delivery: ${checkout.fulfilment.zoneName}`,
+        quantity: orderCount(checkout.lines),
+        price: fee,
+      });
+    }
     return {
       kind: "open" as const,
       checkoutId: checkout._id,
       name: customer.name ?? "",
       phone: customer.phone,
-      items: checkout.lines.map((line) => ({
-        name: line.variantLabel ? `${line.productName} (${line.variantLabel})` : line.productName,
-        quantity: line.quantity,
-        price: line.unitPrice,
-      })),
+      items,
       tries: sessions.length,
     };
   },

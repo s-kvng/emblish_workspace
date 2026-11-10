@@ -1,7 +1,8 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
-import { convertHolds } from "./checkout";
+import { convertHolds, deliveryFeesToday } from "./checkout";
 import { newPickupCode, newReceiptCode, nextReference } from "./codes";
+import { awaitsDeliveryQuote } from "./fulfilment";
 import { queueSms } from "./sms";
 import { recordMovement, stockCounts } from "./stock";
 
@@ -85,6 +86,8 @@ export async function settlePayment(
   if (filled.length > 0) {
     order = await createStoreOrder(ctx, checkout, paymentId, filled, now);
   }
+  // With nothing filled there's nothing to deliver, so its Delivery Fee goes back too.
+  if (!order) toRefund += deliveryFeesToday(checkout);
   if (toRefund > 0) {
     await ctx.db.insert("refunds", {
       paymentId,
@@ -96,20 +99,40 @@ export async function settlePayment(
   }
   await ctx.db.patch(checkout._id, { status: "paid" });
 
-  if (order) {
+  const refund = toRefund > 0 ? { refund: toRefund } : {};
+  const { fulfilment } = checkout;
+  if (order && fulfilment.method === "delivery") {
+    await queueSms(
+      ctx,
+      customer.phone,
+      awaitsDeliveryQuote(fulfilment)
+        ? "paymentConfirmedQuoteDelivery"
+        : "paymentConfirmedDelivery",
+      {
+        amount,
+        reference: order.reference,
+        zoneName: fulfilment.zoneName,
+        receiptUrl: url,
+        ...refund,
+      },
+    );
+  } else if (order) {
     await queueSms(ctx, customer.phone, "paymentConfirmed", {
       amount,
       reference: order.reference,
       pickupCode: order.pickupCode,
       receiptUrl: url,
-      ...(toRefund > 0 ? { refund: toRefund } : {}),
+      ...refund,
     });
   } else {
     await queueSms(ctx, customer.phone, "paymentNotFilled", { amount, receiptUrl: url });
   }
 }
 
-/** A ready Store Order for the filled lines, its units Sold out of Stock. */
+/**
+ * A Store Order for the filled lines, its units Sold out of Stock. It's ready at once, unless
+ * its Delivery Fee is still to be quoted (Elsewhere in Ghana): then it waits at payment due.
+ */
 async function createStoreOrder(
   ctx: Pick<MutationCtx, "db">,
   checkout: Doc<"checkouts">,
@@ -128,8 +151,9 @@ async function createStoreOrder(
     placedAt: now,
     fulfilment: checkout.fulfilment,
     pickupCode,
-    status: "ready",
-    readyAt: now,
+    ...(awaitsDeliveryQuote(checkout.fulfilment)
+      ? { status: "paymentDue" as const }
+      : { status: "ready" as const, readyAt: now }),
   });
   await ctx.db.insert("orderEvents", { orderId, kind: "paid", actor: { kind: "system" } });
   for (const line of lines) {

@@ -1,4 +1,5 @@
 import type { Id } from "./_generated/dataModel";
+import { deliveryFeeToday, type Fulfilment } from "./model/fulfilment";
 import { settlePayment } from "./model/payments";
 import { recordMovement } from "./model/stock";
 import { setupBackend, type TestBackend } from "./test.setup";
@@ -66,11 +67,13 @@ export async function stockOf(t: TestBackend, variantId: Id<"variants">) {
 /**
  * A Store Order paid through the real settlement path: a Checkout for these lines, a Seev
  * session, then `settlePayment` as if Seev had verified it. Returns the order and its code.
+ * Pickup unless a frozen `fulfilment` is given; its Delivery Fee is paid with the lines.
  */
 export async function paidOrder(
   t: TestBackend,
   customerId: Id<"customers">,
   lines: { variantId: Id<"variants">; quantity: number }[],
+  fulfilment: Fulfilment = { method: "pickup" },
 ) {
   return await t.run(async (ctx) => {
     const priced = [];
@@ -87,11 +90,13 @@ export async function paidOrder(
         unitPrice: variant.storePrice,
       });
     }
-    const total = priced.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0);
+    const total =
+      priced.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0) +
+      deliveryFeeToday(fulfilment);
     const checkoutId = await ctx.db.insert("checkouts", {
       customerId,
       lines: priced,
-      fulfilment: { method: "pickup" },
+      fulfilment,
       total,
       status: "pending",
       expiresAt: Date.now() + 30 * 60 * 1000,
@@ -112,4 +117,49 @@ export async function paidOrder(
     if (!order) throw new Error("No order was created");
     return { orderId: order._id, reference: order.reference, pickupCode: order.pickupCode };
   });
+}
+
+/**
+ * Delivery Zones on a test backend: Accra Central (GHS 30), a disabled Tema (GHS 45),
+ * and Elsewhere in Ghana with no fee.
+ */
+export async function withZones(t: TestBackend) {
+  return await t.run(async (ctx) => ({
+    accra: await ctx.db.insert("deliveryZones", {
+      name: "Accra Central",
+      areas: "Osu, Labone, Cantonments",
+      fee: 3000,
+      isElsewhere: false,
+      active: true,
+    }),
+    tema: await ctx.db.insert("deliveryZones", {
+      name: "Tema",
+      areas: "Community 1-25",
+      fee: 4500,
+      isElsewhere: false,
+      active: false,
+    }),
+    elsewhere: await ctx.db.insert("deliveryZones", {
+      name: "Elsewhere in Ghana",
+      areas: "Anywhere else",
+      isElsewhere: true,
+      active: true,
+    }),
+  }));
+}
+
+/** A Delivery to Kofi in Accra Central (GHS 30), frozen as Checkout would. */
+export function accraDelivery(
+  zoneId: Id<"deliveryZones">,
+): Extract<Fulfilment, { method: "delivery" }> {
+  return {
+    method: "delivery",
+    zoneId,
+    zoneName: "Accra Central",
+    deliveryFee: 3000,
+    recipientName: "Kofi Boateng",
+    recipientPhone: kofiPhone,
+    area: "East Legon",
+    landmark: "Opposite the Shell",
+  };
 }

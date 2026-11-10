@@ -42,6 +42,8 @@ export const smsStatus = v.union(
 export const smsTemplate = v.union(
   v.literal("loginCode"),
   v.literal("paymentConfirmed"),
+  v.literal("paymentConfirmedDelivery"),
+  v.literal("paymentConfirmedQuoteDelivery"),
   v.literal("paymentNotFilled"),
   v.literal("paymentUnmatched"),
 );
@@ -62,8 +64,43 @@ export const checkoutLine = v.object({
   /** Integer pesewas: the Store Price at Pay. */
   unitPrice: v.number(),
 });
-/** Fulfilment chosen once at Checkout; Delivery joins it with Delivery Zones. */
-export const fulfilment = v.object({ method: v.literal("pickup") });
+/** The Delivery address as the Customer typed it at Checkout. */
+const deliveryAddress = {
+  recipientName: v.string(),
+  /** E.164; the Customer's verified phone unless they changed it for a gift. */
+  recipientPhone: v.string(),
+  area: v.string(),
+  street: v.optional(v.string()),
+  /** Required: riders find people by landmark. */
+  landmark: v.string(),
+  /** GhanaPost GPS digital address, e.g. GA-123-4567. */
+  ghanaPostGps: v.optional(v.string()),
+};
+/** Fulfilment chosen once at Checkout and frozen on each order it makes. */
+export const fulfilment = v.union(
+  v.object({ method: v.literal("pickup") }),
+  v.object({
+    method: v.literal("delivery"),
+    zoneId: v.id("deliveryZones"),
+    zoneName: v.string(),
+    /** Integer pesewas per order, frozen at Checkout; missing for Elsewhere until quoted. */
+    deliveryFee: v.optional(v.number()),
+    ...deliveryAddress,
+  }),
+);
+/** What the Customer picks at Checkout; the server looks up the zone and its fee. */
+export const fulfilmentRequest = v.union(
+  v.object({ method: v.literal("pickup") }),
+  v.object({
+    method: v.literal("delivery"),
+    zoneId: v.id("deliveryZones"),
+    ...deliveryAddress,
+    /** Defaults to the Customer's name. */
+    recipientName: v.optional(v.string()),
+    /** Defaults to the Customer's verified phone; any Ghana format is accepted. */
+    recipientPhone: v.optional(v.string()),
+  }),
+);
 /** Shared by both order kinds; see the data-model decision. */
 export const orderStatus = v.union(
   v.literal("awaitingArrival"),
@@ -84,8 +121,21 @@ export const overrideReason = v.union(
   v.literal("phoneDead"),
   v.literal("other"),
 );
+/** Why a Delivery attempt failed; the order goes back to Ready with no new fee. */
+export const deliveryFailureReason = v.union(
+  v.literal("customerNotReachable"),
+  v.literal("wrongAddress"),
+  v.literal("customerRefused"),
+  v.literal("riderIssue"),
+);
 /** Every kind of `orderEvents` row; more join with the actions that write them. */
-export const orderEventKind = v.union(v.literal("paid"), v.literal("collected"));
+export const orderEventKind = v.union(
+  v.literal("paid"),
+  v.literal("collected"),
+  v.literal("dispatched"),
+  v.literal("delivered"),
+  v.literal("deliveryFailed"),
+);
 /** Who did something to an order: a Staff member, or the system (such as a verified payment). */
 export const orderActor = v.union(
   v.object({ kind: v.literal("staff"), staffId: v.id("staff") }),
@@ -314,13 +364,17 @@ export default defineSchema({
   }).index("by_order", ["orderId"]),
 
   // Append-only: one row per order action, the audit trail and the order's History.
-  // More kinds (dispatch, cancel units, refund…) are added with the actions that write them.
+  // More kinds (cancel units, refund…) are added with the actions that write them.
   orderEvents: defineTable({
     orderId: v.id("orders"),
     kind: orderEventKind,
     actor: orderActor,
     /** Set on a handover without the Pickup Code. */
     overrideReason: v.optional(overrideReason),
+    /** Set on `dispatched`: who took the goods out. */
+    riderName: v.optional(v.string()),
+    /** Set on `deliveryFailed`. */
+    failureReason: v.optional(deliveryFailureReason),
     note: v.optional(v.string()),
   }).index("by_order", ["orderId"]),
 
@@ -347,6 +401,21 @@ export default defineSchema({
     name: v.string(),
     next: v.number(),
   }).index("by_name", ["name"]),
+
+  // Where the company delivers, each with a flat Delivery Fee only an Owner sets. Disabled,
+  // never deleted. One seeded "Elsewhere in Ghana" row has no fee: Staff quote it per order.
+  deliveryZones: defineTable({
+    name: v.string(),
+    /** The areas it covers, as Customers read them under the zone picker. */
+    areas: v.string(),
+    /** Integer pesewas per order; missing only on Elsewhere in Ghana. */
+    fee: v.optional(v.number()),
+    isElsewhere: v.boolean(),
+    active: v.boolean(),
+    /** The Owner behind the last change, and when; missing on the seeded Elsewhere row. */
+    changedBy: v.optional(v.id("staff")),
+    changedAt: v.optional(v.number()),
+  }),
 
   // A single row, seeded by the bootstrap and edited by an Owner.
   settings: defineTable({

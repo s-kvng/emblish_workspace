@@ -4,6 +4,7 @@ import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { checkoutLine } from "../schema";
+import { deliveryFeeToday, type FulfilmentRequest, freezeFulfilment } from "./fulfilment";
 import { stockCounts } from "./stock";
 
 export type CheckoutLine = Infer<typeof checkoutLine>;
@@ -30,7 +31,21 @@ function refuse(code: string, message: string): never {
 }
 
 /**
- * Creates the Checkout at Pay: prices each Bag line at its Store Price, holds its Stock and
+ * How many orders a Checkout becomes, each paying its own Delivery Fee. Only In-stock lines
+ * exist so far, so it's the one Store Order; Pre-orders add one per Order Window.
+ */
+export function orderCount(lines: CheckoutLine[]) {
+  return lines.length > 0 ? 1 : 0;
+}
+
+/** The fixed-zone Delivery Fees a Checkout charges now: one per order, none for Pickup or Elsewhere. */
+export function deliveryFeesToday(checkout: Pick<Doc<"checkouts">, "lines" | "fulfilment">) {
+  return orderCount(checkout.lines) * deliveryFeeToday(checkout.fulfilment);
+}
+
+/**
+ * Creates the Checkout at Pay: prices each Bag line at its Store Price, freezes the
+ * fulfilment and its Delivery Fee (once per resulting order), holds its Stock and
  * schedules the 30-minute expiry. Any earlier pending Checkout of the Customer's is released
  * first, since the Bag it came from has been submitted again.
  */
@@ -39,6 +54,7 @@ export async function startCheckout(
   customer: Doc<"customers">,
   bag: BagRequest,
   name: string | undefined,
+  fulfilmentRequest: FulfilmentRequest = { method: "pickup" },
 ): Promise<Id<"checkouts">> {
   const trimmedName = name?.trim();
   if (!customer.name && !trimmedName) {
@@ -89,14 +105,21 @@ export async function startCheckout(
     });
   }
 
+  const fulfilment = await freezeFulfilment(
+    ctx,
+    { name: customer.name ?? trimmedName, phone: customer.phone },
+    fulfilmentRequest,
+  );
   if (trimmedName && !customer.name) await ctx.db.patch(customer._id, { name: trimmedName });
 
   const expiresAt = Date.now() + checkoutLifetimeMs;
   const checkoutId = await ctx.db.insert("checkouts", {
     customerId: customer._id,
     lines,
-    fulfilment: { method: "pickup" },
-    total: lines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0),
+    fulfilment,
+    total:
+      lines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0) +
+      deliveryFeesToday({ lines, fulfilment }),
     status: "pending",
     expiresAt,
   });

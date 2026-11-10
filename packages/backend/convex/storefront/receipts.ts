@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 
 import { query } from "../_generated/server";
+import { fulfilmentAsShown, shownFulfilment } from "../model/fulfilment";
 import { pickupLocation } from "../model/settings";
 import { orderStatus } from "../schema";
 
@@ -24,7 +25,9 @@ export const get = query({
         v.object({
           reference: v.string(),
           status: orderStatus,
-          pickupCode: v.string(),
+          /** Pickup only: a Delivery order's code isn't for the Customer to use. */
+          pickupCode: v.optional(v.string()),
+          fulfilment: shownFulfilment,
           lines: v.array(
             v.object({
               productName: v.string(),
@@ -58,7 +61,8 @@ export const get = query({
       orders.push({
         reference: order.reference,
         status: order.status,
-        pickupCode: order.pickupCode,
+        ...(order.fulfilment.method === "pickup" ? { pickupCode: order.pickupCode } : {}),
+        fulfilment: fulfilmentAsShown(order.fulfilment),
         lines: lines.map(({ productName, variantLabel, quantity, unitPrice }) => ({
           productName,
           variantLabel,

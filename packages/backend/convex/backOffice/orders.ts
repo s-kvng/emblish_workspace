@@ -1,20 +1,28 @@
 import { ConvexError, v } from "convex/values";
 
+import type { Doc } from "../_generated/dataModel";
 import { mutation, query } from "../_generated/server";
 import { requireStaff } from "../lib/guards";
+import { fulfilmentAsShown, shownFulfilment } from "../model/fulfilment";
 import {
   alsoReady,
   customerContact,
+  dispatchable,
+  dispatch as dispatchOrder,
+  failDelivery,
   findCustomerForSearch,
   findOpenOrderByCode,
-  handOver as handOverOrders,
   handOverable,
+  handOver as handOverOrders,
+  latestRider,
+  markDelivered as markOrderDelivered,
   orderHistory,
   orderLines,
   owedBack,
+  primaryAction,
 } from "../model/orders";
 import { pickupLocation } from "../model/settings";
-import { orderEventKind, orderStatus, overrideReason } from "../schema";
+import { deliveryFailureReason, orderEventKind, orderStatus, overrideReason } from "../schema";
 
 const line = v.object({
   productName: v.string(),
@@ -85,6 +93,39 @@ export const handOver = mutation({
   },
 });
 
+/** Sends a Ready Delivery order out with the rider taking it: it becomes Dispatched. */
+export const dispatch = mutation({
+  args: { orderId: v.id("orders"), riderName: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { orderId, riderName }) => {
+    const staff = await requireStaff(ctx);
+    await dispatchOrder(ctx, staff, orderId, riderName);
+    return null;
+  },
+});
+
+/** The rider handed it over: a Dispatched order becomes Delivered. */
+export const markDelivered = mutation({
+  args: { orderId: v.id("orders") },
+  returns: v.null(),
+  handler: async (ctx, { orderId }) => {
+    const staff = await requireStaff(ctx);
+    await markOrderDelivered(ctx, staff, orderId);
+    return null;
+  },
+});
+
+/** The rider couldn't deliver: the attempt is recorded and the order is Ready again, no new fee. */
+export const deliveryFailed = mutation({
+  args: { orderId: v.id("orders"), reason: deliveryFailureReason, note: v.optional(v.string()) },
+  returns: v.null(),
+  handler: async (ctx, { orderId, reason, note }) => {
+    const staff = await requireStaff(ctx);
+    await failDelivery(ctx, staff, orderId, { reason, note });
+    return null;
+  },
+});
+
 /** Order detail: lines, payment, History with who did what, and the one primary action. */
 export const get = query({
   args: { orderId: v.id("orders") },
@@ -95,7 +136,8 @@ export const get = query({
     status: orderStatus,
     placedAt: v.number(),
     customer: v.object({ name: v.optional(v.string()), phone: v.string() }),
-    fulfilment: v.literal("pickup"),
+    /** Pickup, or Delivery with the zone, frozen fee and address from Checkout. */
+    fulfilment: shownFulfilment,
     pickupLocation: v.string(),
     pickupCode: v.string(),
     lines: v.array(line),
@@ -117,11 +159,20 @@ export const get = query({
         /** The Staff member's name, or "System". */
         by: v.string(),
         overrideReason: v.optional(overrideReason),
+        /** Who took it out, on a dispatch. */
+        riderName: v.optional(v.string()),
+        /** Why a Delivery attempt failed. */
+        failureReason: v.optional(deliveryFailureReason),
         note: v.optional(v.string()),
       }),
     ),
     /** The sticky bar's one action for this state, or null when there's nothing to do. */
-    primaryAction: v.union(v.literal("handOver"), v.null()),
+    primaryAction: v.union(
+      v.literal("handOver"),
+      v.literal("dispatch"),
+      v.literal("markDelivered"),
+      v.null(),
+    ),
   }),
   handler: async (ctx, { orderId }) => {
     await requireStaff(ctx);
@@ -138,7 +189,7 @@ export const get = query({
       status: order.status,
       placedAt: order.placedAt,
       customer: customerContact(customer),
-      fulfilment: order.fulfilment.method,
+      fulfilment: fulfilmentAsShown(order.fulfilment),
       pickupLocation: await pickupLocation(ctx),
       pickupCode: order.pickupCode,
       lines: await orderLines(ctx, order._id),
@@ -155,12 +206,26 @@ export const get = query({
         : [],
       toRefund: await owedBack(ctx, order),
       history: await orderHistory(ctx, order._id),
-      primaryAction: handOverable(order) ? ("handOver" as const) : null,
+      primaryAction: primaryAction(order),
     };
   },
 });
 
-/** Today, the Back Office home: the Ready-for-pickup queue, longest waiting first. */
+/** A Delivery order on one of Today's queues: who it's for, where it goes and how much. */
+const deliveryRow = {
+  orderId: v.id("orders"),
+  reference: v.string(),
+  customerName: v.optional(v.string()),
+  phone: v.string(),
+  zoneName: v.string(),
+  area: v.string(),
+  units: v.number(),
+};
+
+/**
+ * Today, the Back Office home: the Ready-for-pickup queue, then Delivery orders To dispatch and
+ * Out for delivery, each longest waiting first.
+ */
 export const today = query({
   args: {},
   returns: v.object({
@@ -175,30 +240,66 @@ export const today = query({
         readyAt: v.number(),
       }),
     ),
+    /** Ready Delivery orders with every invoice paid, waiting for a rider. */
+    toDispatch: v.array(v.object({ ...deliveryRow, readyAt: v.number() })),
+    /** Dispatched and not yet Delivered, with the rider who took each. */
+    outForDelivery: v.array(v.object({ ...deliveryRow, riderName: v.optional(v.string()) })),
   }),
   handler: async (ctx) => {
     await requireStaff(ctx);
-    const orders = (
-      await ctx.db
-        .query("orders")
-        .withIndex("by_status", (q) => q.eq("status", "ready"))
-        .collect()
-    ).filter(handOverable);
-    const ready = [];
-    for (const order of orders) {
+    const readyOrders = await ctx.db
+      .query("orders")
+      .withIndex("by_status", (q) => q.eq("status", "ready"))
+      .collect();
+    const dispatchedOrders = await ctx.db
+      .query("orders")
+      .withIndex("by_status", (q) => q.eq("status", "dispatched"))
+      .collect();
+
+    const row = async (order: Doc<"orders">) => {
       const customer = await ctx.db.get(order.customerId);
       const lines = await orderLines(ctx, order._id);
-      ready.push({
+      return {
         orderId: order._id,
         reference: order.reference,
         customerName: customer?.name,
         phone: customer?.phone ?? "",
         units: lines.reduce((sum, l) => sum + l.quantity, 0),
+      };
+    };
+    const where = (order: Doc<"orders">) =>
+      order.fulfilment.method === "delivery"
+        ? { zoneName: order.fulfilment.zoneName, area: order.fulfilment.area }
+        : { zoneName: "", area: "" };
+
+    const ready = [];
+    for (const order of readyOrders.filter(handOverable)) {
+      ready.push({ ...(await row(order)), readyAt: order.readyAt ?? order.placedAt });
+    }
+    ready.sort((a, b) => a.readyAt - b.readyAt);
+
+    const toDispatch = [];
+    for (const order of readyOrders.filter(dispatchable)) {
+      toDispatch.push({
+        ...(await row(order)),
+        ...where(order),
         readyAt: order.readyAt ?? order.placedAt,
       });
     }
-    ready.sort((a, b) => a.readyAt - b.readyAt);
-    return { readyForPickup: ready.length, ready };
+    toDispatch.sort((a, b) => a.readyAt - b.readyAt);
+
+    // Oldest order first: the index reads in creation order.
+    const outForDelivery = [];
+    for (const order of dispatchedOrders) {
+      const riderName = await latestRider(ctx, order._id);
+      outForDelivery.push({
+        ...(await row(order)),
+        ...where(order),
+        ...(riderName ? { riderName } : {}),
+      });
+    }
+
+    return { readyForPickup: ready.length, ready, toDispatch, outForDelivery };
   },
 });
 

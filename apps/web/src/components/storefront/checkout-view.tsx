@@ -6,7 +6,7 @@ import { Input } from "@emblish_workspace/ui/components/input";
 import { Label } from "@emblish_workspace/ui/components/label";
 import { useAction, useConvexAuth, useMutation, useQuery } from "convex/react";
 import { ConvexError } from "convex/values";
-import { ArrowLeft, Clock, MapPin } from "lucide-react";
+import { ArrowLeft, Clock, MapPin, Truck } from "lucide-react";
 import type { Route } from "next";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -24,10 +24,28 @@ export type Step = "bag" | "phone" | "pickup" | "review";
 const titles: Record<Step, string> = {
   bag: "Your bag",
   phone: "Your phone",
-  pickup: "Pickup",
+  pickup: "Pickup or delivery",
   review: "Review & pay",
 };
 const order: Step[] = ["bag", "phone", "pickup", "review"];
+
+type Method = "pickup" | "delivery";
+type Address = {
+  recipientName: string;
+  recipientPhone: string;
+  area: string;
+  street: string;
+  landmark: string;
+  ghanaPostGps: string;
+};
+const emptyAddress: Address = {
+  recipientName: "",
+  recipientPhone: "",
+  area: "",
+  street: "",
+  landmark: "",
+  ghanaPostGps: "",
+};
 
 /** The message a refused Convex call carries, or a fallback. */
 function messageOf(error: unknown, fallback: string) {
@@ -49,6 +67,9 @@ export default function CheckoutView({
   const [step, setStep] = useState<Step>(initialStep);
   const [checkoutId, setCheckoutId] = useState(returnedCheckoutId);
   const [name, setName] = useState("");
+  const [method, setMethod] = useState<Method>("pickup");
+  const [zoneId, setZoneId] = useState("");
+  const [address, setAddress] = useState<Address>(emptyAddress);
   const [busy, setBusy] = useState(false);
 
   const lines = useQuery(api.storefront.catalog.bagLines, {
@@ -56,6 +77,7 @@ export default function CheckoutView({
   });
   const me = useQuery(api.storefront.customer.me, isAuthenticated ? {} : "skip");
   const pickupPoint = useQuery(api.storefront.catalog.pickupPoint);
+  const zones = useQuery(api.storefront.catalog.deliveryZones);
   const checkout = useQuery(
     api.storefront.checkout.get,
     checkoutId && isAuthenticated ? { checkoutId } : "skip",
@@ -99,11 +121,37 @@ export default function CheckoutView({
   }));
   const bagTotal = priced.reduce((sum, line) => sum + line.storePrice * line.quantity, 0);
   const pending = checkout?.status === "pending" ? checkout : undefined;
+  const zone = zones?.find((z) => z._id === zoneId);
+  // Only In-stock lines exist so far, so a non-empty Bag becomes one Store Order.
+  const orderCount = priced.length > 0 ? 1 : 0;
+  const deliveryFee = method === "delivery" ? (zone?.fee ?? 0) : 0;
+  const totalToday = bagTotal + orderCount * deliveryFee;
+  const customerName = me?.name ?? name.trim();
+  const fulfilmentReady =
+    method === "pickup" ||
+    (zone !== undefined &&
+      address.area.trim() !== "" &&
+      address.landmark.trim() !== "" &&
+      (address.recipientName.trim() !== "" || customerName !== ""));
+  const fulfilmentRequest =
+    method === "pickup" || !zone
+      ? ({ method: "pickup" } as const)
+      : {
+          method: "delivery" as const,
+          zoneId: zone._id,
+          area: address.area,
+          landmark: address.landmark,
+          ...(address.street.trim() ? { street: address.street } : {}),
+          ...(address.ghanaPostGps.trim() ? { ghanaPostGps: address.ghanaPostGps } : {}),
+          ...(address.recipientName.trim() ? { recipientName: address.recipientName } : {}),
+          ...(address.recipientPhone.trim() ? { recipientPhone: address.recipientPhone } : {}),
+        };
   const ended = checkout && (checkout.status === "expired" || checkout.status === "released");
 
   const goTo = async (next: Step) => {
-    // Editing the Bag after Pay releases the Checkout; paying again makes a new one.
-    if (next === "bag" && pending && checkoutId) {
+    // Editing the Bag or the Pickup/Delivery choice after Pay releases the Checkout, since both
+    // are frozen on it; paying again makes a new one.
+    if ((next === "bag" || next === "pickup") && pending && checkoutId) {
       await release({ checkoutId }).catch(() => {});
       setCheckoutId(undefined);
       router.replace("/checkout");
@@ -136,6 +184,7 @@ export default function CheckoutView({
           quantity,
         })),
         ...(me?.name ? {} : { name }),
+        fulfilment: fulfilmentRequest,
       });
       setCheckoutId(id);
       await sendToSeev(id);
@@ -184,22 +233,42 @@ export default function CheckoutView({
         {step === "pickup" && (
           <div className="space-y-5">
             <div className="grid grid-cols-2 rounded-lg bg-secondary p-1 text-sm">
-              <span className="rounded-md bg-card py-2 text-center font-semibold shadow-sm">
-                Pickup
-              </span>
-              <span className="py-2 text-center text-muted-foreground">Delivery · soon</span>
+              {(["pickup", "delivery"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  aria-pressed={method === m}
+                  onClick={() => setMethod(m)}
+                  className={`rounded-md py-2 text-center ${method === m ? "bg-card font-semibold shadow-sm" : "text-muted-foreground"}`}
+                >
+                  {m === "pickup" ? "Pickup" : "Delivery"}
+                </button>
+              ))}
             </div>
-            <div className="rounded-lg border bg-card p-4">
-              <p className="flex items-center gap-2 font-semibold text-sm">
-                <MapPin className="size-4 text-brand-purple" /> Pickup point
-              </p>
-              <p className="mt-1 whitespace-pre-line text-sm">
-                {pickupPoint || "We'll text you the pickup point."}
-              </p>
-              <p className="mt-3 text-muted-foreground text-xs">
-                Your order gets its own Pickup Code by SMS when you pay. Show it when you collect.
-              </p>
-            </div>
+            {method === "delivery" ? (
+              <DeliveryForm
+                zones={zones}
+                zoneId={zoneId}
+                onZone={setZoneId}
+                orderCount={orderCount}
+                address={address}
+                onAddress={setAddress}
+                defaultName={customerName}
+                defaultPhone={me?.phone}
+              />
+            ) : (
+              <div className="rounded-lg border bg-card p-4">
+                <p className="flex items-center gap-2 font-semibold text-sm">
+                  <MapPin className="size-4 text-brand-purple" /> Pickup point
+                </p>
+                <p className="mt-1 whitespace-pre-line text-sm">
+                  {pickupPoint || "We'll text you the pickup point."}
+                </p>
+                <p className="mt-3 text-muted-foreground text-xs">
+                  Your order gets its own Pickup Code by SMS when you pay. Show it when you collect.
+                </p>
+              </div>
+            )}
             {me && !me.name && (
               <div className="space-y-1.5">
                 <Label htmlFor="name" className="text-sm">
@@ -213,7 +282,7 @@ export default function CheckoutView({
                   placeholder="Ama Mensah"
                   className="h-11 text-base md:text-base"
                 />
-                <p className="text-muted-foreground text-xs">So we know who's picking up.</p>
+                <p className="text-muted-foreground text-xs">So we know who your order is for.</p>
               </div>
             )}
           </div>
@@ -233,6 +302,23 @@ export default function CheckoutView({
             name={me?.name ?? name}
             phone={me?.phone}
             pickupPoint={pickupPoint}
+            fulfilment={
+              pending?.fulfilment ??
+              (fulfilmentRequest.method === "delivery" && zone
+                ? {
+                    method: "delivery",
+                    zoneName: zone.name,
+                    deliveryFee: zone.fee,
+                    recipientName: address.recipientName.trim() || customerName,
+                    recipientPhone: address.recipientPhone.trim() || (me?.phone ?? ""),
+                    area: address.area.trim(),
+                    street: address.street.trim() || undefined,
+                    landmark: address.landmark.trim(),
+                    ghanaPostGps: address.ghanaPostGps.trim().toUpperCase() || undefined,
+                  }
+                : { method: "pickup" })
+            }
+            total={pending?.total ?? totalToday}
             onEdit={(s) => goTo(s)}
           />
         )}
@@ -253,7 +339,7 @@ export default function CheckoutView({
           <Button
             size="lg"
             className="h-11 w-full text-sm"
-            disabled={!me || (!me.name && name.trim() === "")}
+            disabled={!me || customerName === "" || !fulfilmentReady}
             onClick={() => setStep("review")}
           >
             Continue
@@ -266,7 +352,7 @@ export default function CheckoutView({
             disabled={busy || (!pending && priced.length === 0) || !isAuthenticated}
             onClick={payNow}
           >
-            {busy ? "Opening payment…" : pending ? "Try payment again" : `Pay ${cedi(bagTotal)}`}
+            {busy ? "Opening payment…" : pending ? "Try payment again" : `Pay ${cedi(totalToday)}`}
           </Button>
         )}
       </div>
@@ -404,6 +490,8 @@ function ReviewStep({
   name,
   phone,
   pickupPoint,
+  fulfilment,
+  total,
   onEdit,
 }: {
   lines: {
@@ -416,18 +504,36 @@ function ReviewStep({
   name?: string;
   phone?: string;
   pickupPoint?: string;
+  fulfilment: ReviewFulfilment;
+  /** What's paid today: the lines plus any fixed-zone Delivery Fee. */
+  total: number;
   onEdit: (step: Step) => void;
 }) {
-  const total = lines.reduce((sum, line) => sum + line.unitPrice * line.quantity, 0);
   return (
     <div className="space-y-4 text-sm">
       <Block title="Contact" onEdit={() => onEdit("pickup")}>
         <p>{name}</p>
         <p className="text-muted-foreground">{phone}</p>
       </Block>
-      <Block title="Pickup" onEdit={() => onEdit("pickup")}>
-        <p className="whitespace-pre-line">{pickupPoint || "Pickup point"}</p>
-      </Block>
+      {fulfilment.method === "pickup" ? (
+        <Block title="Pickup" onEdit={() => onEdit("pickup")}>
+          <p className="whitespace-pre-line">{pickupPoint || "Pickup point"}</p>
+        </Block>
+      ) : (
+        <Block title={`Delivery · ${fulfilment.zoneName}`} onEdit={() => onEdit("pickup")}>
+          <p>
+            {fulfilment.recipientName}{" "}
+            <span className="text-muted-foreground">{fulfilment.recipientPhone}</span>
+          </p>
+          <p className="text-muted-foreground">
+            {[fulfilment.street, fulfilment.area].filter(Boolean).join(", ")}, near{" "}
+            {fulfilment.landmark}
+          </p>
+          {fulfilment.ghanaPostGps && (
+            <p className="text-muted-foreground">GPS {fulfilment.ghanaPostGps}</p>
+          )}
+        </Block>
+      )}
       <div className="rounded-lg border bg-card p-4">
         <div className="flex items-center justify-between">
           <p className="font-semibold">Order 1 · In stock</p>
@@ -451,8 +557,24 @@ function ReviewStep({
               <span>{cedi(line.unitPrice * line.quantity)}</span>
             </li>
           ))}
+          {fulfilment.method === "delivery" && (
+            <li className="flex justify-between gap-3">
+              <span>Delivery Fee</span>
+              <span>
+                {fulfilment.deliveryFee === undefined
+                  ? "quoted by SMS"
+                  : cedi(fulfilment.deliveryFee)}
+              </span>
+            </li>
+          )}
         </ul>
-        <p className="mt-2 text-muted-foreground text-xs">Ready for pickup as soon as you pay.</p>
+        <p className="mt-2 text-muted-foreground text-xs">
+          {fulfilment.method === "pickup"
+            ? "Ready for pickup as soon as you pay."
+            : fulfilment.deliveryFee === undefined
+              ? "We text you its Delivery Fee to pay before we send it."
+              : "We deliver it as soon as you pay, and text you when it's on its way."}
+        </p>
       </div>
       <div className="flex justify-between font-semibold text-base">
         <span>Total today</span>
@@ -506,5 +628,147 @@ function Countdown({ expiresAt }: { expiresAt: number }) {
       <Clock className="size-3" />
       {minutes}:{String(seconds).padStart(2, "0")}
     </span>
+  );
+}
+
+/** What Review shows of the fulfilment: the frozen one after Pay, else what's been picked. */
+type ReviewFulfilment =
+  | { method: "pickup" }
+  | {
+      method: "delivery";
+      zoneName: string;
+      deliveryFee?: number;
+      recipientName: string;
+      recipientPhone: string;
+      area: string;
+      street?: string;
+      landmark: string;
+      ghanaPostGps?: string;
+    };
+
+type Zone = {
+  _id: string;
+  name: string;
+  areas: string;
+  fee?: number;
+  isElsewhere: boolean;
+};
+
+/** The Delivery half of the step: zone dropdown, the per-order fee callout, then the address. */
+function DeliveryForm({
+  zones,
+  zoneId,
+  onZone,
+  orderCount,
+  address,
+  onAddress,
+  defaultName,
+  defaultPhone,
+}: {
+  zones: Zone[] | undefined;
+  zoneId: string;
+  onZone: (zoneId: string) => void;
+  orderCount: number;
+  address: Address;
+  onAddress: (address: Address) => void;
+  defaultName: string;
+  defaultPhone?: string;
+}) {
+  const zone = zones?.find((z) => z._id === zoneId);
+  const field = (key: keyof Address) => ({
+    id: key,
+    value: address[key],
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+      onAddress({ ...address, [key]: e.target.value }),
+    className: "h-11 text-base md:text-base",
+  });
+  return (
+    <div className="space-y-4">
+      <div className="space-y-1.5">
+        <Label htmlFor="zone" className="text-sm">
+          Delivery Zone
+        </Label>
+        <select
+          id="zone"
+          value={zoneId}
+          onChange={(e) => onZone(e.target.value)}
+          className="h-11 w-full rounded-md border bg-card px-3 text-base"
+        >
+          <option value="" disabled>
+            {zones === undefined ? "Loading zones…" : "Pick your zone"}
+          </option>
+          {zones?.map((z) => (
+            <option key={z._id} value={z._id}>
+              {z.name} · {z.fee === undefined ? "fee quoted by SMS" : cedi(z.fee)}
+            </option>
+          ))}
+        </select>
+        {zone?.areas && <p className="text-muted-foreground text-xs">{zone.areas}</p>}
+      </div>
+      {zone && (
+        <div className="flex gap-2 rounded-lg bg-brand-purple-mist p-4 text-sm">
+          <Truck className="mt-0.5 size-4 shrink-0 text-brand-purple" />
+          {zone.fee === undefined ? (
+            <p>
+              <span className="font-semibold">Delivery Fee quoted by SMS.</span> We text you the fee
+              after you pay, and send your order once it's paid.
+            </p>
+          ) : (
+            <p>
+              <span className="font-semibold">
+                {orderCount}× {orderCount === 1 ? "delivery" : "deliveries"}, {cedi(zone.fee)} each.
+              </span>{" "}
+              Every order is delivered separately as it becomes ready.
+            </p>
+          )}
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="recipientName" className="text-sm">
+            Recipient name
+          </Label>
+          <Input {...field("recipientName")} autoComplete="name" placeholder={defaultName} />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="recipientPhone" className="text-sm">
+            Recipient phone
+          </Label>
+          <Input
+            {...field("recipientPhone")}
+            type="tel"
+            autoComplete="tel"
+            placeholder={defaultPhone}
+          />
+        </div>
+      </div>
+      <p className="-mt-2 text-muted-foreground text-xs">
+        Leave these blank to receive it yourself. Change them for a gift.
+      </p>
+      <div className="space-y-1.5">
+        <Label htmlFor="area" className="text-sm">
+          Area
+        </Label>
+        <Input {...field("area")} placeholder="East Legon" />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="street" className="text-sm">
+          Street and house <span className="text-muted-foreground">(optional)</span>
+        </Label>
+        <Input {...field("street")} autoComplete="street-address" />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="landmark" className="text-sm">
+          Closest landmark
+        </Label>
+        <Input {...field("landmark")} placeholder="Opposite the Shell station" />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="ghanaPostGps" className="text-sm">
+          GhanaPost GPS <span className="text-muted-foreground">(optional)</span>
+        </Label>
+        <Input {...field("ghanaPostGps")} placeholder="GA-123-4567" />
+      </div>
+    </div>
   );
 }

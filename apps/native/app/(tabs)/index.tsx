@@ -4,7 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "convex/react";
 import { Link, router } from "expo-router";
 import { Input, Spinner } from "heroui-native";
-import { useState } from "react";
+import { type PropsWithChildren, useState } from "react";
 import { Image, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -127,8 +127,60 @@ export default function Today() {
             ))
           )}
         </View>
+
+        <Queue
+          title="To dispatch"
+          count={today?.toDispatch.length}
+          empty="Nothing to send out. Paid Delivery orders show here."
+        >
+          {today?.toDispatch.map((order) => (
+            <OrderRow
+              key={order.orderId}
+              orderId={order.orderId}
+              title={`${order.reference} · ${customerLabel({ name: order.customerName, phone: order.phone })}`}
+              detail={`${order.zoneName} · ${order.area} · ${order.units} ${order.units === 1 ? "item" : "items"} · ready ${waited(order.readyAt)}`}
+            />
+          ))}
+        </Queue>
+
+        <Queue title="Out for delivery" count={today?.outForDelivery.length} empty="No riders out.">
+          {today?.outForDelivery.map((order) => (
+            <OrderRow
+              key={order.orderId}
+              orderId={order.orderId}
+              title={`${order.reference} · ${customerLabel({ name: order.customerName, phone: order.phone })}`}
+              detail={`${order.zoneName} · ${order.area}${order.riderName ? ` · with ${order.riderName}` : ""}`}
+            />
+          ))}
+        </Queue>
       </View>
     </ScrollView>
+  );
+}
+
+/** One of Today's queue cards: a title and count over its rows, or a line when it's empty. */
+function Queue({
+  title,
+  count,
+  empty,
+  children,
+}: PropsWithChildren<{ title: string; count: number | undefined; empty: string }>) {
+  return (
+    <View className="rounded-2xl border border-border bg-surface">
+      <View className="flex-row items-center px-4 pt-4 pb-2">
+        <Text className="flex-1 font-sans-semibold text-base text-foreground">{title}</Text>
+        <Text className="font-display text-[22px] text-brand-purple">{count ?? "…"}</Text>
+      </View>
+      {count === undefined ? (
+        <View className="p-4">
+          <Spinner />
+        </View>
+      ) : count === 0 ? (
+        <Text className="px-4 pb-4 font-sans text-muted text-sm">{empty}</Text>
+      ) : (
+        children
+      )}
+    </View>
   );
 }
 

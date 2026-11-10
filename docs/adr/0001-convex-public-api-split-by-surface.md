@@ -4,7 +4,7 @@ The Storefront (Customers) and the Back Office (Staff) call the same Convex back
 
 The one Back Office exception is accepting an invitation: the invitee isn't Staff yet, so `convex/backOffice/invitation.ts` opens with a check on the invitation's token instead of `requireStaff`, the Back Office's equivalent of the Storefront's public-by-code check. It stays in `backOffice/` because only the Back Office app calls it, and so the folder still holds every way into Staff access.
 
-Browsing the catalog is the Storefront's one guard-free door: `convex/storefront/catalog.ts` is open to anyone, signed in or not, and returns only Published Products and the fields a Customer may see, plus the pickup point's address and hours, which the store publishes anyway. Every other Storefront function opens with `requireCustomer` or a public-by-code check.
+Browsing the catalog is the Storefront's one guard-free door: `convex/storefront/catalog.ts` is open to anyone, signed in or not, and returns only Published Products and the fields a Customer may see, plus the pickup point's address and hours and the active Delivery Zones with their fees, which the store publishes anyway. Every other Storefront function opens with `requireCustomer` or a public-by-code check.
 
 A Storefront **action** can't read the database, so it can't run `requireCustomer` itself. It opens with `requireIdentity` instead and passes `identity.subject` to an internal `system/` query that finishes the Customer and ownership check before anything else happens (`storefront/checkout.ts` `pay` and `refresh`). The Receipt at `/r/<code>` (`storefront/receipts.ts`) is a public-by-code lookup.
 

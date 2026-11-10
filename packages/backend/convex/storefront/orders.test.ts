@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import { api } from "../_generated/api";
-import { paidOrder, withCustomer, withShop } from "../test.checkout";
+import { accraDelivery, paidOrder, withCustomer, withShop, withZones } from "../test.checkout";
 import { refusal, withStaffMember } from "../test.staff";
 
 describe("My orders needs a signed-in Customer", () => {
@@ -173,5 +173,37 @@ describe("a card's image strip", () => {
     expect(smallLine?.imageUrl).toEqual(expect.any(String));
     expect(mediumLine?.imageUrl).toEqual(expect.any(String));
     expect(smallLine?.imageUrl).not.toBe(mediumLine?.imageUrl);
+  });
+});
+
+describe("a Delivery order's card", () => {
+  test("follows the order out: Dispatched, then Delivered and past, without naming Staff", async () => {
+    const { t, small, customerId, customer } = await withShop();
+    const { accra } = await withZones(t);
+    const esi = await withStaffMember(t, "Esi Ofori");
+    const order = await paidOrder(
+      t,
+      customerId,
+      [{ variantId: small, quantity: 1 }],
+      accraDelivery(accra),
+    );
+    const card = async () => (await customer.query(api.storefront.orders.mine, {}))[0];
+
+    await esi.mutation(api.backOffice.orders.dispatch, {
+      orderId: order.orderId,
+      riderName: "Yaw",
+    });
+    expect(await card()).toMatchObject({ status: "dispatched", past: false, needsAction: false });
+    expect(await card()).not.toHaveProperty("pickupCode");
+
+    await esi.mutation(api.backOffice.orders.markDelivered, { orderId: order.orderId });
+    const delivered = await card();
+    expect(delivered).toMatchObject({ status: "delivered", past: true });
+    expect(delivered?.history.map((event) => event.kind)).toEqual([
+      "paid",
+      "dispatched",
+      "delivered",
+    ]);
+    expect(delivered?.history[1]).not.toHaveProperty("by");
   });
 });
