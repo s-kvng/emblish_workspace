@@ -47,6 +47,10 @@ const eventLabel: Record<Card["history"][number]["kind"], string> = {
   dispatched: "Out for delivery",
   delivered: "Delivered",
   deliveryFailed: "Delivery attempt missed",
+  unitsCancelled: "Part of your order cancelled",
+  cancelled: "Order cancelled",
+  refundFlagged: "Refund agreed",
+  refunded: "Refund sent",
 };
 
 /** The status line, worded for how the order reaches the Customer. */
@@ -265,7 +269,8 @@ function OrderCard({
   expand: () => void;
 }) {
   const [first] = card.lines;
-  const units = card.lines.reduce((sum, line) => sum + line.quantity, 0);
+  // Units still coming to the Customer; cancelled ones show under the card's Refunds.
+  const units = card.lines.reduce((sum, line) => sum + line.quantity - line.refundedQuantity, 0);
   return (
     <article
       className={`overflow-hidden rounded-2xl border bg-card shadow-sm ${
@@ -381,6 +386,12 @@ function CardDetail({ card }: { card: Card }) {
                 {line.quantity}× {line.productName}
                 {line.variantLabel && (
                   <span className="text-muted-foreground"> · {line.variantLabel}</span>
+                )}
+                {line.refundedQuantity > 0 && (
+                  <span className="text-muted-foreground">
+                    {" "}
+                    ({line.refundedQuantity} removed, see Refunds)
+                  </span>
                 )}
               </span>
               <span>{cedi(line.quantity * line.unitPrice)}</span>

@@ -11,6 +11,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { pickupCodeLength } from "@emblish_workspace/backend/convex/model/orders";
 
 import { customerLabel, orderStatusLabel } from "@/components/order-labels";
+import { formatGhs } from "@/lib/money";
 
 const emblem = require("@/assets/images/emblem.png");
 
@@ -18,6 +19,7 @@ const emblem = require("@/assets/images/emblem.png");
 export default function Today() {
   const insets = useSafeAreaInsets();
   const today = useQuery(api.backOffice.orders.today);
+  const refunds = useQuery(api.backOffice.refunds.toMake);
   const [query, setQuery] = useState("");
   // A Pickup Code is the shortest thing worth searching for.
   const searching = query.trim().length >= pickupCodeLength;
@@ -153,6 +155,28 @@ export default function Today() {
             />
           ))}
         </Queue>
+
+        <Link href="/refunds" asChild>
+          <Pressable
+            accessibilityRole="button"
+            className="flex-row items-center rounded-2xl border border-border bg-surface p-4"
+          >
+            <View className="flex-1">
+              <Text className="font-sans-semibold text-base text-foreground">Refunds to make</Text>
+              <Text className="font-sans text-muted text-xs">
+                {refunds === undefined
+                  ? "…"
+                  : refunds.refunds.length === 0
+                    ? "Nothing owed back."
+                    : `${formatGhs(refunds.total)} owed back${refunds.canRefund ? "" : " · Owner only"}`}
+              </Text>
+            </View>
+            <Text className="mr-2 font-display text-[22px] text-brand-purple">
+              {refunds?.refunds.length ?? "…"}
+            </Text>
+            <Ionicons name="chevron-forward" size={20} color={brand["ink-muted"]} />
+          </Pressable>
+        </Link>
       </View>
     </ScrollView>
   );

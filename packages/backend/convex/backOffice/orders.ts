@@ -2,7 +2,7 @@ import { ConvexError, v } from "convex/values";
 
 import type { Doc } from "../_generated/dataModel";
 import { mutation, query } from "../_generated/server";
-import { requireStaff } from "../lib/guards";
+import { requireOwner, requireStaff } from "../lib/guards";
 import { fulfilmentAsShown, shownFulfilment } from "../model/fulfilment";
 import {
   alsoReady,
@@ -21,15 +21,37 @@ import {
   owedBack,
   primaryAction,
 } from "../model/orders";
+import {
+  cancellable,
+  cancelUnits as cancelOrderUnits,
+  handedOver,
+  refundableDeliveryFee,
+  refundAfterHandover as refundOrderAfterHandover,
+} from "../model/refunds";
 import { pickupLocation } from "../model/settings";
-import { deliveryFailureReason, orderEventKind, orderStatus, overrideReason } from "../schema";
+import {
+  deliveryFailureReason,
+  orderEventKind,
+  orderStatus,
+  overrideReason,
+  refundLine,
+} from "../schema";
 
 const line = v.object({
+  orderLineId: v.id("orderLines"),
   productName: v.string(),
   variantLabel: v.string(),
+  /** Units paid for. */
   quantity: v.number(),
   unitPrice: v.number(),
+  /** Of those, units cancelled before handover or refunded after it. */
+  refundedQuantity: v.number(),
 });
+
+/** The lines with units left to hand over; fully cancelled ones aren't on the counter. */
+function toHandOver<Line extends { quantity: number; refundedQuantity: number }>(lines: Line[]) {
+  return lines.filter((line) => line.quantity > line.refundedQuantity);
+}
 
 /**
  * The Counter's code-first lookup: the open order with this Pickup Code, as a handover card
@@ -60,7 +82,7 @@ export const findByCode = query({
       others.push({
         orderId: other._id,
         reference: other.reference,
-        lines: await orderLines(ctx, other._id),
+        lines: toHandOver(await orderLines(ctx, other._id)),
       });
     }
     return {
@@ -68,7 +90,7 @@ export const findByCode = query({
       reference: order.reference,
       status: order.status,
       customer: customerContact(customer),
-      lines: await orderLines(ctx, order._id),
+      lines: toHandOver(await orderLines(ctx, order._id)),
       alsoReady: others,
     };
   },
@@ -126,6 +148,48 @@ export const deliveryFailed = mutation({
   },
 });
 
+/**
+ * Cancels units on a Store Order before handover. They go back to Stock unless Staff say
+ * otherwise, and their price is flagged as a Refund for the Owner to pay out.
+ */
+export const cancelUnits = mutation({
+  args: {
+    orderId: v.id("orders"),
+    lines: v.array(refundLine),
+    /** Defaults to true: the units are on the shelf, unharmed. */
+    returnToStock: v.optional(v.boolean()),
+    note: v.optional(v.string()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const staff = await requireStaff(ctx);
+    await cancelOrderUnits(ctx, staff, args);
+    return null;
+  },
+});
+
+/**
+ * The Owner refunds a handed-over order: units and/or its paid Delivery Fee, with a reason.
+ * Goods that came back can be restocked as Returned. The Refund waits on Refunds to make.
+ */
+export const refundAfterHandover = mutation({
+  args: {
+    orderId: v.id("orders"),
+    lines: v.array(refundLine),
+    /** Also refund the Delivery Fee paid on it, if any is left to refund. */
+    deliveryFee: v.optional(v.boolean()),
+    /** Defaults to false: the Customer usually keeps the goods. */
+    returnToStock: v.optional(v.boolean()),
+    note: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const owner = await requireOwner(ctx);
+    await refundOrderAfterHandover(ctx, owner, args);
+    return null;
+  },
+});
+
 /** Order detail: lines, payment, History with who did what, and the one primary action. */
 export const get = query({
   args: { orderId: v.id("orders") },
@@ -152,6 +216,12 @@ export const get = query({
     ),
     /** Pesewas flagged for refund from this order's payment and not yet refunded. */
     toRefund: v.number(),
+    /** Staff may cancel units: the goods are still with us. */
+    canCancelUnits: v.boolean(),
+    /** The Customer has the goods, so an Owner may refund after handover. */
+    canRefundAfterHandover: v.boolean(),
+    /** Pesewas of the paid Delivery Fee not yet flagged for refund. */
+    refundableDeliveryFee: v.number(),
     history: v.array(
       v.object({
         kind: orderEventKind,
@@ -163,6 +233,10 @@ export const get = query({
         riderName: v.optional(v.string()),
         /** Why a Delivery attempt failed. */
         failureReason: v.optional(deliveryFailureReason),
+        /** Units cancelled or refunded, on those events. */
+        units: v.optional(v.number()),
+        /** Pesewas flagged or paid back, on refund events. */
+        amount: v.optional(v.number()),
         note: v.optional(v.string()),
       }),
     ),
@@ -205,6 +279,9 @@ export const get = query({
           ]
         : [],
       toRefund: await owedBack(ctx, order),
+      canCancelUnits: cancellable(order),
+      canRefundAfterHandover: handedOver(order),
+      refundableDeliveryFee: await refundableDeliveryFee(ctx, order),
       history: await orderHistory(ctx, order._id),
       primaryAction: primaryAction(order),
     };
@@ -264,7 +341,7 @@ export const today = query({
         reference: order.reference,
         customerName: customer?.name,
         phone: customer?.phone ?? "",
-        units: lines.reduce((sum, l) => sum + l.quantity, 0),
+        units: lines.reduce((sum, l) => sum + l.quantity - l.refundedQuantity, 0),
       };
     };
     const where = (order: Doc<"orders">) =>

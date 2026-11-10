@@ -135,6 +135,10 @@ export const orderEventKind = v.union(
   v.literal("dispatched"),
   v.literal("delivered"),
   v.literal("deliveryFailed"),
+  v.literal("unitsCancelled"),
+  v.literal("cancelled"),
+  v.literal("refundFlagged"),
+  v.literal("refunded"),
 );
 /** Who did something to an order: a Staff member, or the system (such as a verified payment). */
 export const orderActor = v.union(
@@ -150,6 +154,15 @@ export const refundKind = v.union(
   v.literal("fulfilmentSwitch"),
   v.literal("discretionary"),
 );
+/** How the Owner sent a Refund's money back; Seev has no refunds API (ADR 0004). */
+export const refundMethod = v.union(
+  v.literal("seevDashboard"),
+  v.literal("mobileMoney"),
+  v.literal("cash"),
+  v.literal("other"),
+);
+/** Units of one order line a cancel or Refund covers. */
+export const refundLine = v.object({ orderLineId: v.id("orderLines"), quantity: v.number() });
 const invitationStatus = v.union(
   v.literal("pending"),
   v.literal("accepted"),
@@ -361,10 +374,11 @@ export default defineSchema({
     variantLabel: v.string(),
     unitPrice: v.number(),
     quantity: v.number(),
+    /** Units cancelled before handover or refunded after it; missing reads as 0. */
+    refundedQuantity: v.optional(v.number()),
   }).index("by_order", ["orderId"]),
 
   // Append-only: one row per order action, the audit trail and the order's History.
-  // More kinds (cancel units, refund…) are added with the actions that write them.
   orderEvents: defineTable({
     orderId: v.id("orders"),
     kind: orderEventKind,
@@ -375,23 +389,38 @@ export default defineSchema({
     riderName: v.optional(v.string()),
     /** Set on `deliveryFailed`. */
     failureReason: v.optional(deliveryFailureReason),
+    /** Set on `unitsCancelled` and `refundFlagged`: how many units. */
+    units: v.optional(v.number()),
+    /** Pesewas, set on `unitsCancelled`, `refundFlagged` and `refunded`. */
+    amount: v.optional(v.number()),
     note: v.optional(v.string()),
   }).index("by_order", ["orderId"]),
 
-  // Money owed back to a Customer from one payment. Paying it out comes with the refunds ticket.
+  // Money owed back to a Customer from one payment. Seev has no refunds API, so the Owner pays
+  // it out by hand and marks it refunded (ADR 0004).
   refunds: defineTable({
     paymentId: v.id("payments"),
     orderId: v.optional(v.id("orders")),
     kind: refundKind,
-    /** Integer pesewas. */
+    /** Integer pesewas, including `deliveryFee`. */
     amount: v.number(),
-    status: v.union(
-      v.literal("toRefund"),
-      v.literal("processing"),
-      v.literal("refunded"),
-      v.literal("needsAttention"),
-    ),
+    status: v.union(v.literal("toRefund"), v.literal("refunded")),
+    /** Why it was flagged. */
     note: v.optional(v.string()),
+    /** Whether its units went back to Stock; missing on refunds from before cancels existed. */
+    returnToStock: v.optional(v.boolean()),
+    /** The order lines and units it covers, when it's for units. */
+    lines: v.optional(v.array(refundLine)),
+    /** Pesewas of `amount` that are the order's Delivery Fee. */
+    deliveryFee: v.optional(v.number()),
+    /** Who flagged it; missing when the system did, at settlement. */
+    flaggedBy: v.optional(v.id("staff")),
+    /** Set when the Owner marks it refunded. */
+    refundedAt: v.optional(v.number()),
+    refundedBy: v.optional(v.id("staff")),
+    method: v.optional(refundMethod),
+    /** The Owner's payout note, such as the MoMo transaction id. */
+    refundNote: v.optional(v.string()),
   })
     .index("by_status", ["status"])
     .index("by_payment", ["paymentId"]),

@@ -3,6 +3,7 @@ import type {
   OrderStatus,
   OverrideReason,
 } from "@emblish_workspace/backend/convex/model/orders";
+import type { RefundKind, RefundMethod } from "@emblish_workspace/backend/convex/model/refunds";
 
 /** How each order status reads to Staff. */
 export const orderStatusLabel: Record<OrderStatus, string> = {
@@ -42,10 +43,35 @@ export function deliveryFailureLabel(reason: DeliveryFailureReason) {
   return deliveryFailureReasons.find((option) => option.value === reason)?.label ?? reason;
 }
 
-/** "2× Kente Weekend Tote · S" */
-export function lineLabel(line: { quantity: number; productName: string; variantLabel: string }) {
-  return `${line.quantity}× ${line.productName}${line.variantLabel ? ` · ${line.variantLabel}` : ""}`;
+/** "2× Kente Weekend Tote · S", counting only units still the Customer's. */
+export function lineLabel(line: {
+  quantity: number;
+  refundedQuantity?: number;
+  productName: string;
+  variantLabel: string;
+}) {
+  const units = line.quantity - (line.refundedQuantity ?? 0);
+  return `${units}× ${line.productName}${line.variantLabel ? ` · ${line.variantLabel}` : ""}`;
 }
+
+/** Why a Refund is owed, as Refunds to make lists it. */
+export const refundKindLabel: Record<RefundKind, string> = {
+  shortfall: "Shortfall",
+  latePaid: "Late-paid",
+  cancelledLine: "Cancelled units",
+  cancelledPreorder: "Cancelled Pre-order",
+  afterHandover: "After handover",
+  fulfilmentSwitch: "Fulfilment switch",
+  discretionary: "Payment to check",
+};
+
+/** How the Owner sent a Refund back, as offered on Mark refunded, in order. */
+export const refundMethods: { value: RefundMethod; label: string }[] = [
+  { value: "seevDashboard", label: "Seev dashboard" },
+  { value: "mobileMoney", label: "Mobile money" },
+  { value: "cash", label: "Cash" },
+  { value: "other", label: "Other" },
+];
 
 /** What Staff call a Customer: the name asked at their first Checkout, else their phone. */
 export function customerLabel(customer: { name?: string; phone: string }) {

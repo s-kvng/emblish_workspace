@@ -31,15 +31,19 @@ export async function refusal(promise: Promise<unknown>) {
   );
 }
 
-/** Adds an active Staff member (not an Owner) and returns their calls. */
-export async function withStaffMember(t: ReturnType<typeof setupBackend>, name = "Kofi Boateng") {
+/** Adds an active Staff member (not an Owner, unless `role` says so) and returns their calls. */
+export async function withStaffMember(
+  t: ReturnType<typeof setupBackend>,
+  name = "Kofi Boateng",
+  role: "staff" | "owner" = "staff",
+) {
   const authUserId = `auth-${name.toLowerCase().replace(/\W+/g, "-")}`;
   await t.run((ctx) =>
     ctx.db.insert("staff", {
       authUserId,
       email: `${authUserId}@emblish.test`,
       name,
-      role: "staff",
+      role,
       status: "active",
     }),
   );

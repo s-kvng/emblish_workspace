@@ -48,11 +48,13 @@ export async function orderLines(ctx: Pick<QueryCtx, "db">, orderId: Id<"orders"
     .query("orderLines")
     .withIndex("by_order", (q) => q.eq("orderId", orderId))
     .collect();
-  return lines.map(({ productName, variantLabel, quantity, unitPrice }) => ({
+  return lines.map(({ _id, productName, variantLabel, quantity, unitPrice, refundedQuantity }) => ({
+    orderLineId: _id,
     productName,
     variantLabel,
     quantity,
     unitPrice,
+    refundedQuantity: refundedQuantity ?? 0,
   }));
 }
 
@@ -66,7 +68,8 @@ export async function orderLinesWithPhotos(
     .withIndex("by_order", (q) => q.eq("orderId", orderId))
     .collect();
   const shown = [];
-  for (const { variantId, productName, variantLabel, quantity, unitPrice } of lines) {
+  for (const line of lines) {
+    const { variantId, productName, variantLabel, quantity, unitPrice } = line;
     const variant = await ctx.db.get(variantId);
     const product = variant && (await ctx.db.get(variant.productId));
     const imageId = variant?.imageId ?? product?.gallery[0];
@@ -76,6 +79,7 @@ export async function orderLinesWithPhotos(
       variantLabel,
       quantity,
       unitPrice,
+      refundedQuantity: line.refundedQuantity ?? 0,
       ...(imageUrl ? { imageUrl } : {}),
     });
   }
@@ -284,6 +288,8 @@ export async function orderHistory(ctx: Pick<QueryCtx, "db">, orderId: Id<"order
       overrideReason: event.overrideReason,
       riderName: event.riderName,
       failureReason: event.failureReason,
+      units: event.units,
+      amount: event.amount,
       note: event.note,
     });
   }
