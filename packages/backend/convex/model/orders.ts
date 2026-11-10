@@ -2,10 +2,17 @@ import { ConvexError, type Infer } from "convex/values";
 
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import {
+  type deliveryFailureReason,
+  openOrderStatuses,
+  type orderStatus,
+  type overrideReason,
+} from "../schema";
 import { toGhanaPhone } from "./customers";
-import { openOrderStatuses, type orderStatus, type overrideReason } from "../schema";
+import { awaitsDeliveryQuote } from "./fulfilment";
 
 export type OverrideReason = Infer<typeof overrideReason>;
+export type DeliveryFailureReason = Infer<typeof deliveryFailureReason>;
 export type OrderStatus = Infer<typeof orderStatus>;
 
 /** A Pickup Code is this many digits. */
@@ -78,6 +85,18 @@ export async function orderLinesWithPhotos(
 /** Whether an order can be handed over at the Counter now: Ready, for Pickup. */
 export function handOverable(order: Doc<"orders">) {
   return order.status === "ready" && order.fulfilment.method === "pickup";
+}
+
+/**
+ * Whether Staff can send a rider out with it now: a Ready Delivery order with every invoice on
+ * it paid. A Store Order is paid in full at Checkout, so only an unquoted fee stands in the way.
+ */
+export function dispatchable(order: Doc<"orders">) {
+  return (
+    order.status === "ready" &&
+    order.fulfilment.method === "delivery" &&
+    !awaitsDeliveryQuote(order.fulfilment)
+  );
 }
 
 /** Handed over or ended: nothing more will happen to it, so My orders files it under Past. */
@@ -159,6 +178,96 @@ export async function handOver(
   }
 }
 
+/** Sends a Ready Delivery order out with a named rider: it becomes Dispatched. */
+export async function dispatch(
+  ctx: Pick<MutationCtx, "db">,
+  actor: Doc<"staff">,
+  orderId: Id<"orders">,
+  riderName: string,
+) {
+  const order = await ctx.db.get(orderId);
+  if (!order) refuse("NOT_FOUND", "That order doesn't exist.");
+  if (!dispatchable(order)) {
+    refuse("NOT_DISPATCHABLE", `${order.reference} isn't ready for delivery, so it can't go out.`);
+  }
+  const rider = riderName.trim();
+  if (!rider) refuse("RIDER_REQUIRED", "Who's taking it? Enter the rider's name.");
+  await ctx.db.patch(order._id, { status: "dispatched" });
+  await ctx.db.insert("orderEvents", {
+    orderId: order._id,
+    kind: "dispatched",
+    actor: { kind: "staff", staffId: actor._id },
+    riderName: rider,
+  });
+}
+
+/** The Dispatched order, or a refusal: only an order out with a rider can be delivered or fail. */
+async function outForDelivery(ctx: Pick<QueryCtx, "db">, orderId: Id<"orders">) {
+  const order = await ctx.db.get(orderId);
+  if (!order) refuse("NOT_FOUND", "That order doesn't exist.");
+  if (order.status !== "dispatched") {
+    refuse("NOT_OUT_FOR_DELIVERY", `${order.reference} isn't out for delivery.`);
+  }
+  return order;
+}
+
+/** The rider handed the goods over: the Dispatched order becomes Delivered. */
+export async function markDelivered(
+  ctx: Pick<MutationCtx, "db">,
+  actor: Doc<"staff">,
+  orderId: Id<"orders">,
+) {
+  const order = await outForDelivery(ctx, orderId);
+  await ctx.db.patch(order._id, { status: "delivered" });
+  await ctx.db.insert("orderEvents", {
+    orderId: order._id,
+    kind: "delivered",
+    actor: { kind: "staff", staffId: actor._id },
+  });
+}
+
+/**
+ * The rider came back with the goods: the attempt is recorded with its reason and the order is
+ * Ready again, to go out once more. The Delivery Fee already paid covers it; nothing new is owed.
+ */
+export async function failDelivery(
+  ctx: Pick<MutationCtx, "db">,
+  actor: Doc<"staff">,
+  orderId: Id<"orders">,
+  failure: { reason: DeliveryFailureReason; note?: string },
+) {
+  const order = await outForDelivery(ctx, orderId);
+  const note = failure.note?.trim();
+  await ctx.db.patch(order._id, { status: "ready" });
+  await ctx.db.insert("orderEvents", {
+    orderId: order._id,
+    kind: "deliveryFailed",
+    actor: { kind: "staff", staffId: actor._id },
+    failureReason: failure.reason,
+    ...(note ? { note } : {}),
+  });
+}
+
+/** The rider on the order's latest dispatch, if it has gone out. */
+export async function latestRider(ctx: Pick<QueryCtx, "db">, orderId: Id<"orders">) {
+  const dispatched = (
+    await ctx.db
+      .query("orderEvents")
+      .withIndex("by_order", (q) => q.eq("orderId", orderId))
+      .order("desc")
+      .collect()
+  ).find((event) => event.kind === "dispatched");
+  return dispatched?.riderName;
+}
+
+/** The sticky bar's one action for the order's state, or null when there's nothing to do. */
+export function primaryAction(order: Doc<"orders">) {
+  if (handOverable(order)) return "handOver" as const;
+  if (dispatchable(order)) return "dispatch" as const;
+  if (order.status === "dispatched") return "markDelivered" as const;
+  return null;
+}
+
 /** An order's History, oldest first, naming the Staff member behind each action. */
 export async function orderHistory(ctx: Pick<QueryCtx, "db">, orderId: Id<"orders">) {
   const events = await ctx.db
@@ -173,6 +282,8 @@ export async function orderHistory(ctx: Pick<QueryCtx, "db">, orderId: Id<"order
       at: event._creationTime,
       by: event.actor.kind === "system" ? "System" : (staff?.name ?? "Former Staff"),
       overrideReason: event.overrideReason,
+      riderName: event.riderName,
+      failureReason: event.failureReason,
       note: event.note,
     });
   }

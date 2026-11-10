@@ -1,24 +1,34 @@
 import { api } from "@emblish_workspace/backend/convex/_generated/api";
 import type { Id } from "@emblish_workspace/backend/convex/_generated/dataModel";
+import type { DeliveryFailureReason } from "@emblish_workspace/backend/convex/model/orders";
 import { brand } from "@emblish_workspace/brand/tokens";
 import { Ionicons } from "@expo/vector-icons";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { router, useLocalSearchParams } from "expo-router";
-import { Button, Spinner } from "heroui-native";
-import type { PropsWithChildren } from "react";
+import { Button, Input, Spinner } from "heroui-native";
+import { type PropsWithChildren, useState } from "react";
 import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
   customerLabel,
+  deliveryFailureLabel,
+  deliveryFailureReasons,
   lineLabel,
   orderStatusLabel,
   overrideReasonLabel,
 } from "@/components/order-labels";
 import { ScreenHeader } from "@/components/screen-header";
+import { refusalMessage } from "@/lib/form-errors";
 import { formatGhs } from "@/lib/money";
 
-const eventLabel = { paid: "Paid", collected: "Collected" } as const;
+const eventLabel = {
+  paid: "Paid",
+  collected: "Collected",
+  dispatched: "Dispatched",
+  delivered: "Delivered",
+  deliveryFailed: "Delivery failed",
+} as const;
 
 // An order that's gone (or a bad link) shows the router's error screen with Retry.
 export { ErrorBoundary } from "expo-router";
@@ -149,6 +159,17 @@ export default function OrderDetailScreen() {
                   <Text className="font-sans text-muted text-xs">
                     {new Date(event.at).toLocaleString("en-GH")}
                   </Text>
+                  {event.riderName ? (
+                    <Text className="font-sans text-foreground text-sm">
+                      Rider: {event.riderName}
+                    </Text>
+                  ) : null}
+                  {event.failureReason ? (
+                    <Text className="font-sans text-foreground text-sm">
+                      {deliveryFailureLabel(event.failureReason)}
+                      {event.note ? ` (${event.note})` : ""}
+                    </Text>
+                  ) : null}
                   {event.overrideReason ? (
                     <Text className="font-sans text-foreground text-sm">
                       Without code: {overrideReasonLabel(event.overrideReason)}
@@ -177,8 +198,158 @@ export default function OrderDetailScreen() {
             <Button.Label>Hand over</Button.Label>
           </Button>
         </View>
+      ) : order.primaryAction === "dispatch" ? (
+        <StickyBar bottom={insets.bottom}>
+          <DispatchBar orderId={order.orderId} />
+        </StickyBar>
+      ) : order.primaryAction === "markDelivered" ? (
+        <StickyBar bottom={insets.bottom}>
+          <DeliveryOutcomeBar orderId={order.orderId} />
+        </StickyBar>
       ) : null}
     </View>
+  );
+}
+
+/** The bottom bar holding the order's one primary action, clear of the home indicator. */
+function StickyBar({ bottom, children }: PropsWithChildren<{ bottom: number }>) {
+  return (
+    <View
+      className="gap-2 border-border border-t bg-surface p-3"
+      style={{ paddingBottom: bottom + 12 }}
+    >
+      {children}
+    </View>
+  );
+}
+
+/** Ready Delivery order: name the rider taking it, then Dispatch. */
+function DispatchBar({ orderId }: { orderId: Id<"orders"> }) {
+  const dispatch = useMutation(api.backOffice.orders.dispatch);
+  const [riderName, setRiderName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await dispatch({ orderId, riderName });
+      setRiderName("");
+    } catch (refused) {
+      setError(refusalMessage(refused));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <Input
+        value={riderName}
+        onChangeText={setRiderName}
+        placeholder="Rider's name"
+        accessibilityLabel="Rider's name"
+        autoCapitalize="words"
+      />
+      {error ? <Text className="font-sans-semibold text-danger text-sm">{error}</Text> : null}
+      <Button size="lg" onPress={submit} isDisabled={busy || !riderName.trim()}>
+        <Ionicons name="bicycle" size={20} color="white" />
+        <Button.Label>Dispatch</Button.Label>
+      </Button>
+    </>
+  );
+}
+
+/** Out for delivery: Mark delivered, or record a failed attempt with its reason. */
+function DeliveryOutcomeBar({ orderId }: { orderId: Id<"orders"> }) {
+  const markDelivered = useMutation(api.backOffice.orders.markDelivered);
+  const deliveryFailed = useMutation(api.backOffice.orders.deliveryFailed);
+  const [failing, setFailing] = useState(false);
+  const [reason, setReason] = useState<DeliveryFailureReason | null>(null);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const run = async (call: () => Promise<unknown>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await call();
+    } catch (refused) {
+      setError(refusalMessage(refused));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (failing) {
+    return (
+      <>
+        <Text className="font-sans-semibold text-foreground">Why didn't it arrive?</Text>
+        <View className="flex-row flex-wrap gap-2">
+          {deliveryFailureReasons.map((option) => {
+            const picked = reason === option.value;
+            return (
+              <Pressable
+                key={option.value}
+                onPress={() => setReason(option.value)}
+                accessibilityRole="radio"
+                aria-checked={picked}
+                className={`min-h-11 justify-center rounded-full px-4 ${picked ? "bg-brand-purple" : "border border-border"}`}
+              >
+                <Text className={`font-sans-semibold ${picked ? "text-white" : "text-foreground"}`}>
+                  {option.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <Input
+          value={note}
+          onChangeText={setNote}
+          placeholder="Note (optional)"
+          accessibilityLabel="Note"
+        />
+        <Text className="font-sans text-muted text-xs">
+          It goes back to Ready to dispatch again. The Customer pays no new fee.
+        </Text>
+        {error ? <Text className="font-sans-semibold text-danger text-sm">{error}</Text> : null}
+        <View className="flex-row gap-2">
+          <Button
+            variant="secondary"
+            className="flex-1"
+            onPress={() => setFailing(false)}
+            isDisabled={busy}
+          >
+            <Button.Label>Back</Button.Label>
+          </Button>
+          <Button
+            variant="danger"
+            className="flex-1"
+            isDisabled={busy || !reason}
+            onPress={() =>
+              reason && run(() => deliveryFailed({ orderId, reason, note: note || undefined }))
+            }
+          >
+            <Button.Label>Record failed attempt</Button.Label>
+          </Button>
+        </View>
+      </>
+    );
+  }
+
+  return (
+    <>
+      {error ? <Text className="font-sans-semibold text-danger text-sm">{error}</Text> : null}
+      <Button size="lg" onPress={() => run(() => markDelivered({ orderId }))} isDisabled={busy}>
+        <Ionicons name="checkmark-circle" size={20} color="white" />
+        <Button.Label>Mark delivered</Button.Label>
+      </Button>
+      <Button variant="secondary" onPress={() => setFailing(true)} isDisabled={busy}>
+        <Button.Label>Delivery failed</Button.Label>
+      </Button>
+    </>
   );
 }
 

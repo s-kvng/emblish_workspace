@@ -1,4 +1,8 @@
-import type { OrderStatus, OverrideReason } from "@emblish_workspace/backend/convex/model/orders";
+import type {
+  DeliveryFailureReason,
+  OrderStatus,
+  OverrideReason,
+} from "@emblish_workspace/backend/convex/model/orders";
 
 /** How each order status reads to Staff. */
 export const orderStatusLabel: Record<OrderStatus, string> = {
@@ -23,6 +27,19 @@ export const overrideReasons: { value: OverrideReason; label: string }[] = [
 /** The chip label for an override reason. */
 export function overrideReasonLabel(reason: OverrideReason) {
   return overrideReasons.find((option) => option.value === reason)?.label ?? reason;
+}
+
+/** Why a Delivery attempt failed, as offered when the rider comes back, in order. */
+export const deliveryFailureReasons: { value: DeliveryFailureReason; label: string }[] = [
+  { value: "customerNotReachable", label: "Customer not reachable" },
+  { value: "wrongAddress", label: "Wrong address" },
+  { value: "customerRefused", label: "Customer refused" },
+  { value: "riderIssue", label: "Rider issue" },
+];
+
+/** The chip label for a failed delivery's reason. */
+export function deliveryFailureLabel(reason: DeliveryFailureReason) {
+  return deliveryFailureReasons.find((option) => option.value === reason)?.label ?? reason;
 }
 
 /** "2× Kente Weekend Tote · S" */

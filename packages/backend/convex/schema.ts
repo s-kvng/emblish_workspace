@@ -121,8 +121,21 @@ export const overrideReason = v.union(
   v.literal("phoneDead"),
   v.literal("other"),
 );
+/** Why a Delivery attempt failed; the order goes back to Ready with no new fee. */
+export const deliveryFailureReason = v.union(
+  v.literal("customerNotReachable"),
+  v.literal("wrongAddress"),
+  v.literal("customerRefused"),
+  v.literal("riderIssue"),
+);
 /** Every kind of `orderEvents` row; more join with the actions that write them. */
-export const orderEventKind = v.union(v.literal("paid"), v.literal("collected"));
+export const orderEventKind = v.union(
+  v.literal("paid"),
+  v.literal("collected"),
+  v.literal("dispatched"),
+  v.literal("delivered"),
+  v.literal("deliveryFailed"),
+);
 /** Who did something to an order: a Staff member, or the system (such as a verified payment). */
 export const orderActor = v.union(
   v.object({ kind: v.literal("staff"), staffId: v.id("staff") }),
@@ -351,13 +364,17 @@ export default defineSchema({
   }).index("by_order", ["orderId"]),
 
   // Append-only: one row per order action, the audit trail and the order's History.
-  // More kinds (dispatch, cancel units, refund…) are added with the actions that write them.
+  // More kinds (cancel units, refund…) are added with the actions that write them.
   orderEvents: defineTable({
     orderId: v.id("orders"),
     kind: orderEventKind,
     actor: orderActor,
     /** Set on a handover without the Pickup Code. */
     overrideReason: v.optional(overrideReason),
+    /** Set on `dispatched`: who took the goods out. */
+    riderName: v.optional(v.string()),
+    /** Set on `deliveryFailed`. */
+    failureReason: v.optional(deliveryFailureReason),
     note: v.optional(v.string()),
   }).index("by_order", ["orderId"]),
 

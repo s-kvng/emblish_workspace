@@ -44,6 +44,9 @@ const refundReason: Record<Card["refunds"][number]["reason"], string> = {
 const eventLabel: Record<Card["history"][number]["kind"], string> = {
   paid: "Paid",
   collected: "Collected",
+  dispatched: "Out for delivery",
+  delivered: "Delivered",
+  deliveryFailed: "Delivery attempt missed",
 };
 
 /** The status line, worded for how the order reaches the Customer. */
@@ -187,20 +190,28 @@ export default function MyOrdersView() {
   );
 }
 
-/** The horizontal dot tracker. Store Orders: Paid → Ready → Collected (or Delivered). */
+/**
+ * The horizontal dot tracker. Store Orders: Paid → Ready → Collected, or for Delivery
+ * Paid → Ready → Out for delivery → Delivered.
+ */
 function Tracker({ card }: { card: Card }) {
   const ended = card.status === "cancelled" || card.status === "forfeited";
-  const dots = ["Paid", "Ready", card.fulfilment.method === "delivery" ? "Delivered" : "Collected"];
+  const delivery = card.fulfilment.method === "delivery";
+  const dots = delivery
+    ? ["Paid", "Ready", "Out for delivery", "Delivered"]
+    : ["Paid", "Ready", "Collected"];
   const reached = ended
     ? 0
     : card.status === "collected" || card.status === "delivered"
-      ? 3
-      : card.status === "ready" || card.status === "dispatched"
-        ? 2
-        : 1;
+      ? dots.length
+      : card.status === "dispatched"
+        ? 3
+        : card.status === "ready"
+          ? 2
+          : 1;
   return (
     <div>
-      <ol className="grid grid-cols-3" aria-label="Progress">
+      <ol className={`grid ${delivery ? "grid-cols-4" : "grid-cols-3"}`} aria-label="Progress">
         {dots.map((dot, i) => {
           const done = i < reached;
           const current = i === reached - 1;
