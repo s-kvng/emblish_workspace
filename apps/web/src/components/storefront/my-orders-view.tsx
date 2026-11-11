@@ -16,7 +16,7 @@ import { authClient } from "@/lib/auth-client";
 import { cedi } from "@/lib/money";
 
 type Card = FunctionReturnType<typeof api.storefront.orders.mine>[number];
-type Filter = "all" | "store" | "past";
+type Filter = "all" | "preorder" | "store" | "past";
 
 /** How each order status reads to a Customer. */
 const statusLabel: Record<OrderStatus, string> = {
@@ -96,12 +96,21 @@ export default function MyOrdersView() {
   const shown =
     filter === "past"
       ? past
-      : filter === "store"
-        ? active.filter((card) => card.kind === "store")
-        : active;
+      : filter === "all"
+        ? active
+        : active.filter((card) => card.kind === filter);
   const chips: { key: Filter; label: string; count: number }[] = [
     { key: "all", label: "All", count: cards?.length ?? 0 },
-    { key: "store", label: "Store Orders", count: active.filter((c) => c.kind === "store").length },
+    {
+      key: "preorder",
+      label: "Pre-orders",
+      count: active.filter((c) => c.kind === "preorder").length,
+    },
+    {
+      key: "store",
+      label: "Store Orders",
+      count: active.filter((c) => c.kind === "store").length,
+    },
     { key: "past", label: "Past", count: past.length },
   ];
 
@@ -196,26 +205,34 @@ export default function MyOrdersView() {
 
 /**
  * The horizontal dot tracker. Store Orders: Paid → Ready → Collected, or for Delivery
- * Paid → Ready → Out for delivery → Delivered.
+ * Paid → Ready → Out for delivery → Delivered. A Pre-order adds Arrived after Paid.
  */
 function Tracker({ card }: { card: Card }) {
   const ended = card.status === "cancelled" || card.status === "forfeited";
   const delivery = card.fulfilment.method === "delivery";
-  const dots = delivery
-    ? ["Paid", "Ready", "Out for delivery", "Delivered"]
-    : ["Paid", "Ready", "Collected"];
+  const preorder = card.kind === "preorder";
+  const dots = [
+    "Paid",
+    ...(preorder ? ["Arrived"] : []),
+    "Ready",
+    ...(delivery ? ["Out for delivery", "Delivered"] : ["Collected"]),
+  ];
+  const ready = dots.indexOf("Ready") + 1;
   const reached = ended
     ? 0
     : card.status === "collected" || card.status === "delivered"
       ? dots.length
       : card.status === "dispatched"
-        ? 3
+        ? ready + 1
         : card.status === "ready"
-          ? 2
-          : 1;
+          ? ready
+          : card.status === "paymentDue" && preorder
+            ? 2
+            : 1;
+  const columns = ["", "", "", "grid-cols-3", "grid-cols-4", "grid-cols-5"][dots.length];
   return (
     <div>
-      <ol className={`grid ${delivery ? "grid-cols-4" : "grid-cols-3"}`} aria-label="Progress">
+      <ol className={`grid ${columns}`} aria-label="Progress">
         {dots.map((dot, i) => {
           const done = i < reached;
           const current = i === reached - 1;
@@ -307,7 +324,8 @@ function OrderCard({
                 )}
               </p>
               <p className="text-muted-foreground text-xs">
-                {card.reference} · Store Order · {units} {units === 1 ? "item" : "items"}
+                {card.reference} · {card.kind === "preorder" ? "Pre-order" : "Store Order"} ·{" "}
+                {units} {units === 1 ? "item" : "items"}
               </p>
             </div>
             <ChevronDown

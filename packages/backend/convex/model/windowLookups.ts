@@ -30,6 +30,15 @@ export async function listWindowVariants(ctx: Pick<QueryCtx, "db">, windowId: Id
     .collect();
 }
 
+/** The window's row for one of its offered Variants. */
+export async function windowRowFor(
+  ctx: Pick<QueryCtx, "db">,
+  orderWindowId: Id<"orderWindows">,
+  variantId: Id<"variants">,
+) {
+  return (await listWindowVariants(ctx, orderWindowId)).find((r) => r.variantId === variantId);
+}
+
 /** Units of a capped Variant still to be had in the window; undefined when it's uncapped. */
 export function unitsLeft(row: Pick<Doc<"windowVariants">, "cap" | "preordered" | "held">) {
   return row.cap === undefined ? undefined : Math.max(0, row.cap - row.preordered - row.held);

@@ -220,6 +220,8 @@ export const preorderBagLines = query({
       /** Units left under the cap; missing when it's uncapped. */
       left: v.optional(v.number()),
       closesAt: v.number(),
+      /** Fewest units per Pre-order in the window, across its Variants; the Bag checks it. */
+      minimumOrderQuantity: v.optional(v.number()),
       imageUrl: v.optional(v.string()),
     }),
   ),
@@ -247,6 +249,9 @@ export const preorderBagLines = query({
         preorderPrice: preorder.price,
         ...(preorder.left === undefined ? {} : { left: preorder.left }),
         closesAt: window.closesAt,
+        ...(window.minimumOrderQuantity === undefined
+          ? {}
+          : { minimumOrderQuantity: window.minimumOrderQuantity }),
         imageUrl: (imageId && (await ctx.storage.getUrl(imageId))) || undefined,
       });
     }

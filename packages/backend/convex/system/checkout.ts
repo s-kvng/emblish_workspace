@@ -2,9 +2,8 @@ import { v } from "convex/values";
 
 import { internal } from "../_generated/api";
 import { internalMutation, internalQuery } from "../_generated/server";
-import { endCheckout, findOwnCheckout, orderCount } from "../model/checkout";
+import { deliveryFeesToday, endCheckout, findOwnCheckout } from "../model/checkout";
 import { getCustomer } from "../model/customers";
-import { deliveryFeeToday } from "../model/fulfilment";
 import { settlePayment } from "../model/payments";
 import { pollEveryMs } from "./seev";
 
@@ -48,17 +47,23 @@ export const paymentRequest = internalQuery({
       .query("paymentSessions")
       .withIndex("by_checkout", (q) => q.eq("checkoutId", checkout._id))
       .collect();
-    const items = checkout.lines.map((line) => ({
-      name: line.variantLabel ? `${line.productName} (${line.variantLabel})` : line.productName,
-      quantity: line.quantity,
-      price: line.unitPrice,
-    }));
-    // A fixed-zone Delivery Fee is paid now, one per order, as its own line.
-    const fee = deliveryFeeToday(checkout.fulfilment);
+    const items = checkout.lines.map((line) => {
+      const name = line.variantLabel
+        ? `${line.productName} (${line.variantLabel})`
+        : line.productName;
+      return {
+        name: line.orderWindowId === undefined ? name : `Pre-order: ${name}`,
+        quantity: line.quantity,
+        price: line.unitPrice,
+      };
+    });
+    // The Store Order's fixed-zone Delivery Fee is paid now, as its own line; each Pre-order
+    // pays its own on its Shipping Fee Invoice.
+    const fee = deliveryFeesToday(checkout);
     if (fee > 0 && checkout.fulfilment.method === "delivery") {
       items.push({
         name: `Delivery: ${checkout.fulfilment.zoneName}`,
-        quantity: orderCount(checkout.lines),
+        quantity: 1,
         price: fee,
       });
     }

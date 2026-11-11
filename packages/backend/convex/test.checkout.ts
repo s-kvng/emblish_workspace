@@ -163,3 +163,102 @@ export function accraDelivery(
     landmark: "Opposite the Shell",
   };
 }
+
+/**
+ * The shop of `withShop`, plus two open Order Windows:
+ * - "Linen Kaftan" (Pre-order only) W1: Size S GHS 380 capped at 3, Size M GHS 400 uncapped,
+ *   a Minimum Order Quantity of 2 across them and a GHS 45 Shipping Fee estimate.
+ * - "Shea Body Butter" (Pre-order only) W1: one default Variant at GHS 90, no minimum, uncapped.
+ */
+export async function withPreorders(customerName: string | null = "Kofi Boateng") {
+  const shop = await withShop(customerName);
+  const windows = await shop.t.run(async (ctx) => {
+    const staffId = await ctx.db.insert("staff", {
+      authUserId: "auth-window-opener",
+      email: "opener@emblish.test",
+      name: "Ama Mensah",
+      role: "owner",
+      status: "active",
+    });
+    async function preorderProduct(name: string, slug: string, optionValues: string[][]) {
+      const productId = await ctx.db.insert("products", {
+        name,
+        slug,
+        description: "",
+        status: "published",
+        gallery: [],
+        options: optionValues[0]!.length > 0 ? [{ name: "Size", values: optionValues.flat() }] : [],
+        sellInStock: false,
+      });
+      const variants = [];
+      for (const values of optionValues) {
+        variants.push(await ctx.db.insert("variants", { productId, optionValues: values }));
+      }
+      return { productId, variants };
+    }
+    async function openWindow(
+      productId: Id<"products">,
+      rows: {
+        variantId: Id<"variants">;
+        preorderPrice: number;
+        cap?: number;
+      }[],
+      terms: { minimumOrderQuantity?: number; shippingFeeEstimate?: number },
+    ) {
+      const windowId = await ctx.db.insert("orderWindows", {
+        productId,
+        number: 1,
+        stage: "open",
+        opensAt: Date.now(),
+        closesAt: Date.now() + 10 * 24 * 60 * 60 * 1000,
+        createdBy: staffId,
+        ...terms,
+      });
+      for (const row of rows) {
+        await ctx.db.insert("windowVariants", {
+          orderWindowId: windowId,
+          ...row,
+          preordered: 0,
+          held: 0,
+        });
+      }
+      return windowId;
+    }
+    const kaftan = await preorderProduct("Linen Kaftan", "linen-kaftan", [["S"], ["M"]]);
+    const [kaftanS, kaftanM] = kaftan.variants as [Id<"variants">, Id<"variants">];
+    const kaftanWindow = await openWindow(
+      kaftan.productId,
+      [
+        { variantId: kaftanS, preorderPrice: 38000, cap: 3 },
+        { variantId: kaftanM, preorderPrice: 40000 },
+      ],
+      { minimumOrderQuantity: 2, shippingFeeEstimate: 4500 },
+    );
+    const shea = await preorderProduct("Shea Body Butter", "shea-body-butter", [[]]);
+    const [sheaJar] = shea.variants as [Id<"variants">];
+    const sheaWindow = await openWindow(
+      shea.productId,
+      [{ variantId: sheaJar, preorderPrice: 9000 }],
+      {},
+    );
+    return { kaftanS, kaftanM, kaftanWindow, sheaJar, sheaWindow };
+  });
+  return { ...shop, ...windows };
+}
+
+/** A window's offered-Variant row, with its cached `preordered` and `held` counts. */
+export async function windowRow(
+  t: TestBackend,
+  orderWindowId: Id<"orderWindows">,
+  variantId: Id<"variants">,
+) {
+  return await t.run(async (ctx) => {
+    const rows = await ctx.db
+      .query("windowVariants")
+      .withIndex("by_window", (q) => q.eq("orderWindowId", orderWindowId))
+      .collect();
+    const row = rows.find((r) => r.variantId === variantId);
+    if (!row) throw new Error("The window doesn't offer that Variant");
+    return { preordered: row.preordered, held: row.held };
+  });
+}

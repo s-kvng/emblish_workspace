@@ -6,6 +6,13 @@ import type { MutationCtx } from "../_generated/server";
 import type { smsTemplate } from "../schema";
 import { ghs } from "./money";
 
+/** "Pre-order P-1042 placed.", naming at most two so the SMS stays within 2 segments. */
+export function preordersPlaced(references: string[]) {
+  const named = references.slice(0, 2).join(", ");
+  const more = references.length > 2 ? ` and ${references.length - 2} more` : "";
+  return `Pre-order${references.length === 1 ? "" : "s"} ${named}${more} placed.`;
+}
+
 /**
  * Every SMS a Customer gets is rendered from one of these templates. They follow the
  * notification style rules: English, GSM-7 only (money as "GHS", never "₵"; no emoji,
@@ -38,10 +45,13 @@ export const smsTemplates = {
     pickupCode: string;
     receiptUrl: string;
     refund?: number;
+    /** Pre-orders the same charge placed. */
+    preorders?: string[];
   }>({
-    render: ({ amount, reference, pickupCode, receiptUrl, refund }) =>
+    render: ({ amount, reference, pickupCode, receiptUrl, refund, preorders }) =>
       `Emblish: payment of ${ghs(amount)} received. Order ${reference} is ready for pickup. ` +
       `Pickup Code ${pickupCode}. Receipt: ${receiptUrl}` +
+      (preorders?.length ? ` ${preordersPlaced(preorders)}` : "") +
       (refund ? ` ${ghs(refund)} of it could not be filled and will be refunded.` : ""),
     example: {
       amount: 45000,
@@ -49,6 +59,7 @@ export const smsTemplates = {
       pickupCode: "482913",
       receiptUrl: "https://emblish.com/r/7KQ2MX9P",
       refund: 12000,
+      preorders: ["P-1042", "P-1043", "P-1044"],
     },
     redact: (body) => body.replace(/Pickup Code \d{6}/, "Pickup Code ******"),
   }),
@@ -59,10 +70,13 @@ export const smsTemplates = {
     zoneName: string;
     receiptUrl: string;
     refund?: number;
+    /** Pre-orders the same charge placed. */
+    preorders?: string[];
   }>({
-    render: ({ amount, reference, zoneName, receiptUrl, refund }) =>
+    render: ({ amount, reference, zoneName, receiptUrl, refund, preorders }) =>
       `Emblish: payment of ${ghs(amount)} received. Order ${reference} will be delivered to ` +
       `${zoneName}. We will text you when it is on its way. Receipt: ${receiptUrl}` +
+      (preorders?.length ? ` ${preordersPlaced(preorders)}` : "") +
       (refund ? ` ${ghs(refund)} of it could not be filled and will be refunded.` : ""),
     example: {
       amount: 48000,
@@ -70,6 +84,7 @@ export const smsTemplates = {
       zoneName: "Accra Central",
       receiptUrl: "https://emblish.com/r/7KQ2MX9P",
       refund: 12000,
+      preorders: ["P-1042", "P-1043", "P-1044"],
     },
   }),
   // As paymentConfirmed, for Delivery Elsewhere in Ghana: the fee is quoted later.
@@ -79,15 +94,38 @@ export const smsTemplates = {
     zoneName: string;
     receiptUrl: string;
     refund?: number;
+    /** Pre-orders the same charge placed. */
+    preorders?: string[];
   }>({
-    render: ({ amount, reference, zoneName, receiptUrl, refund }) =>
+    render: ({ amount, reference, zoneName, receiptUrl, refund, preorders }) =>
       `Emblish: payment of ${ghs(amount)} received for order ${reference}. We will text you ` +
       `the delivery fee to ${zoneName}. Receipt: ${receiptUrl}` +
+      (preorders?.length ? ` ${preordersPlaced(preorders)}` : "") +
       (refund ? ` ${ghs(refund)} of it could not be filled and will be refunded.` : ""),
     example: {
       amount: 45000,
       reference: "S-0310",
       zoneName: "Elsewhere in Ghana",
+      receiptUrl: "https://emblish.com/r/7KQ2MX9P",
+      refund: 12000,
+      preorders: ["P-1042", "P-1043", "P-1044"],
+    },
+  }),
+  // One per charge that created Pre-orders and no Store Order.
+  paymentConfirmedPreorder: template<{
+    amount: number;
+    references: string[];
+    receiptUrl: string;
+    refund?: number;
+  }>({
+    render: ({ amount, references, receiptUrl, refund }) =>
+      `Emblish: payment of ${ghs(amount)} received. ${preordersPlaced(references)} ` +
+      `We will text you when ${references.length === 1 ? "it arrives" : "they arrive"}. ` +
+      `Receipt: ${receiptUrl}` +
+      (refund ? ` ${ghs(refund)} of it could not be filled and will be refunded.` : ""),
+    example: {
+      amount: 116000,
+      references: ["P-1042", "P-1043", "P-1044"],
       receiptUrl: "https://emblish.com/r/7KQ2MX9P",
       refund: 12000,
     },

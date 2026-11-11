@@ -68,7 +68,8 @@ async function takeUnits(
  * Order's fee is paid at Checkout once known; an Elsewhere fee still to quote has none.
  */
 export async function refundableDeliveryFee(ctx: Pick<QueryCtx, "db">, order: Doc<"orders">) {
-  if (order.fulfilment.method !== "delivery") return 0;
+  // A Pre-order's Delivery Fee is billed on its Shipping Fee Invoice, so none is paid yet.
+  if (order.kind === "preorder" || order.fulfilment.method !== "delivery") return 0;
   const paid = order.fulfilment.deliveryFee ?? 0;
   const refunds = await ctx.db
     .query("refunds")

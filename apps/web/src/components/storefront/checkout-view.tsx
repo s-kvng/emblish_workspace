@@ -1,6 +1,7 @@
 "use client";
 
 import { api } from "@emblish_workspace/backend/convex/_generated/api";
+import type { Id } from "@emblish_workspace/backend/convex/_generated/dataModel";
 import { Button } from "@emblish_workspace/ui/components/button";
 import { Input } from "@emblish_workspace/ui/components/input";
 import { Label } from "@emblish_workspace/ui/components/label";
@@ -72,7 +73,7 @@ export default function CheckoutView({
   const [address, setAddress] = useState<Address>(emptyAddress);
   const [busy, setBusy] = useState(false);
 
-  // Only In-stock lines can be paid for so far; Pre-order lines wait in the Bag.
+  // In-stock lines become one Store Order; Pre-order lines one Pre-order per Order Window.
   const inStockBag = bag.lines.filter((line) => !line.windowId);
   const preorderBag = bag.lines.filter((line) => line.windowId);
   const lines = useQuery(api.storefront.catalog.bagLines, {
@@ -134,13 +135,20 @@ export default function CheckoutView({
       preorderBag.find((l) => l.variantId === line.variantId && l.windowId === line.windowId)
         ?.quantity ?? 0,
   }));
-  const bagTotal = priced.reduce((sum, line) => sum + line.storePrice * line.quantity, 0);
+  const windows = windowGroups(pricedPreorders);
+  const bagTotal =
+    priced.reduce((sum, line) => sum + line.storePrice * line.quantity, 0) +
+    pricedPreorders.reduce((sum, line) => sum + line.preorderPrice * line.quantity, 0);
   const pending = checkout?.status === "pending" ? checkout : undefined;
   const zone = zones?.find((z) => z._id === zoneId);
-  // Only In-stock lines exist so far, so a non-empty Bag becomes one Store Order.
-  const orderCount = priced.length > 0 ? 1 : 0;
-  const deliveryFee = method === "delivery" ? (zone?.fee ?? 0) : 0;
-  const totalToday = bagTotal + orderCount * deliveryFee;
+  const orderCount = (priced.length > 0 ? 1 : 0) + windows.length;
+  // Only the Store Order pays its Delivery Fee today; each Pre-order pays its own on arrival.
+  const deliveryFee = method === "delivery" && priced.length > 0 ? (zone?.fee ?? 0) : 0;
+  const totalToday = bagTotal + deliveryFee;
+  const blocked =
+    priced.some((l) => l.quantity > l.inStock) ||
+    pricedPreorders.some((l) => l.left !== undefined && l.quantity > l.left) ||
+    windows.some((w) => w.short > 0);
   const customerName = me?.name ?? name.trim();
   const fulfilmentReady =
     method === "pickup" ||
@@ -194,10 +202,17 @@ export default function CheckoutView({
         return;
       }
       const { checkoutId: id } = await start({
-        lines: priced.map(({ variantId, quantity }) => ({
-          variantId,
-          quantity,
-        })),
+        lines: [
+          ...priced.map(({ variantId, quantity }) => ({
+            variantId: variantId as Id<"variants">,
+            quantity,
+          })),
+          ...pricedPreorders.map(({ variantId, windowId, quantity }) => ({
+            variantId: variantId as Id<"variants">,
+            windowId: windowId as Id<"orderWindows">,
+            quantity,
+          })),
+        ],
         ...(me?.name ? {} : { name }),
         fulfilment: fulfilmentRequest,
       });
@@ -239,7 +254,7 @@ export default function CheckoutView({
         {step === "bag" && (
           <BagStep
             lines={priced}
-            preorders={pricedPreorders}
+            windows={windows}
             loading={lines === undefined || preorderLines === undefined}
             onQuantity={bag.setQuantity}
           />
@@ -271,6 +286,7 @@ export default function CheckoutView({
                 zoneId={zoneId}
                 onZone={setZoneId}
                 orderCount={orderCount}
+                preorderCount={windows.length}
                 address={address}
                 onAddress={setAddress}
                 defaultName={customerName}
@@ -310,15 +326,25 @@ export default function CheckoutView({
         {step === "review" && (
           <ReviewStep
             lines={
-              pending?.lines ??
-              priced.map((line) => ({
-                variantId: line.variantId,
-                productName: line.productName,
-                variantLabel: line.variantLabel,
-                quantity: line.quantity,
-                unitPrice: line.storePrice,
-              }))
+              pending?.lines ?? [
+                ...priced.map((line) => ({
+                  variantId: line.variantId,
+                  productName: line.productName,
+                  variantLabel: line.variantLabel,
+                  quantity: line.quantity,
+                  unitPrice: line.storePrice,
+                })),
+                ...pricedPreorders.map((line) => ({
+                  variantId: line.variantId,
+                  orderWindowId: line.windowId,
+                  productName: line.productName,
+                  variantLabel: line.variantLabel,
+                  quantity: line.quantity,
+                  unitPrice: line.preorderPrice,
+                })),
+              ]
             }
+            windows={windows}
             name={me?.name ?? name}
             phone={me?.phone}
             pickupPoint={pickupPoint}
@@ -349,14 +375,10 @@ export default function CheckoutView({
           <Button
             size="lg"
             className="h-11 w-full text-sm"
-            disabled={priced.length === 0 || priced.some((l) => l.quantity > l.inStock)}
+            disabled={orderCount === 0 || blocked}
             onClick={() => goTo(isAuthenticated ? "pickup" : "phone")}
           >
-            {priced.length > 0
-              ? `Check out · ${cedi(bagTotal)}`
-              : pricedPreorders.length > 0
-                ? "Pre-order checkout opens soon"
-                : "Your bag is empty"}
+            {orderCount > 0 ? `Check out · ${cedi(bagTotal)}` : "Your bag is empty"}
           </Button>
         )}
         {step === "pickup" && (
@@ -373,7 +395,7 @@ export default function CheckoutView({
           <Button
             size="lg"
             className="h-11 w-full text-sm"
-            disabled={busy || (!pending && priced.length === 0) || !isAuthenticated}
+            disabled={busy || (!pending && (orderCount === 0 || blocked)) || !isAuthenticated}
             onClick={payNow}
           >
             {busy ? "Opening payment…" : pending ? "Try payment again" : `Pay ${cedi(totalToday)}`}
@@ -427,23 +449,66 @@ type PreorderLine = {
   preorderPrice: number;
   left?: number;
   closesAt: number;
+  minimumOrderQuantity?: number;
   imageUrl?: string;
   quantity: number;
 };
 
+/** The Bag's Pre-order lines as the Pre-orders they become: one per Order Window. */
+type WindowGroup = {
+  windowId: string;
+  productName: string;
+  closesAt: number;
+  minimum?: number;
+  units: number;
+  /** Units still to add before the window's Minimum Order Quantity is met. */
+  short: number;
+  lines: PreorderLine[];
+};
+
+function windowGroups(lines: PreorderLine[]): WindowGroup[] {
+  const groups: WindowGroup[] = [];
+  for (const line of lines) {
+    let group = groups.find((g) => g.windowId === line.windowId);
+    if (!group) {
+      group = {
+        windowId: line.windowId,
+        productName: line.productName,
+        closesAt: line.closesAt,
+        minimum: line.minimumOrderQuantity,
+        units: 0,
+        short: 0,
+        lines: [],
+      };
+      groups.push(group);
+    }
+    group.lines.push(line);
+    group.units += line.quantity;
+    group.short = Math.max(0, (group.minimum ?? 0) - group.units);
+  }
+  return groups;
+}
+
+function closeDay(at: number) {
+  return new Date(at).toLocaleDateString("en-GH", {
+    day: "numeric",
+    month: "short",
+  });
+}
+
 function BagStep({
   lines,
-  preorders,
+  windows,
   loading,
   onQuantity,
 }: {
   lines: PricedLine[];
-  preorders: PreorderLine[];
+  windows: WindowGroup[];
   loading: boolean;
   onQuantity: (variantId: string, quantity: number, windowId?: string) => void;
 }) {
   if (loading) return <p className="text-muted-foreground text-sm">Loading your bag…</p>;
-  if (lines.length === 0 && preorders.length === 0) {
+  if (lines.length === 0 && windows.length === 0) {
     return (
       <div className="py-10 text-center">
         <p className="text-muted-foreground text-sm">Nothing in your bag yet.</p>
@@ -453,93 +518,108 @@ function BagStep({
       </div>
     );
   }
+  const orders = [
+    ...(lines.length > 0 ? ["Store Order: ready as soon as you pay."] : []),
+    ...windows.map(
+      (w) =>
+        `Pre-order · ${w.productName}: arrives after the window closes on ${closeDay(w.closesAt)}. Shipping Fee billed then.`,
+    ),
+  ];
   return (
     <div className="space-y-5">
-      {preorders.length > 0 && <PreorderLines lines={preorders} onQuantity={onQuantity} />}
+      {windows.map((window) => (
+        <PreorderLines key={window.windowId} window={window} onQuantity={onQuantity} />
+      ))}
       {lines.length > 0 && (
-        <>
-          <ul className="divide-y">
-            {lines.map((line) => (
-              <li key={line.variantId} className="flex gap-3 py-3">
-                <ProductPhoto
-                  url={line.imageUrl}
-                  alt=""
-                  sizes="64px"
-                  className="size-16 shrink-0 rounded-md"
-                />
-                <div className="min-w-0 flex-1">
-                  <Link href={`/products/${line.slug}`} className="font-medium text-sm">
-                    {line.productName}
-                  </Link>
-                  {line.variantLabel && (
-                    <p className="text-muted-foreground text-xs">{line.variantLabel}</p>
-                  )}
-                  <span className="mt-1 inline-block rounded bg-brand-purple-mist px-1.5 py-0.5 font-semibold text-[10px] text-brand-purple uppercase">
-                    In stock
-                  </span>
-                  {line.quantity > line.inStock && (
-                    <p className="mt-1 text-destructive text-xs">
-                      {line.inStock > 0
-                        ? `Only ${line.inStock} left. Lower the quantity.`
-                        : "Sold out. Remove it to continue."}
-                    </p>
-                  )}
-                  <div className="mt-2 flex items-center gap-3">
-                    <select
-                      aria-label={`Quantity of ${line.productName}`}
-                      value={line.quantity}
-                      onChange={(e) => onQuantity(line.variantId, Number(e.target.value))}
-                      className="h-8 rounded-md border bg-card px-2 text-sm"
-                    >
-                      {Array.from(
-                        { length: Math.max(line.quantity, line.inStock, 1) },
-                        (_, i) => i + 1,
-                      ).map((n) => (
-                        <option key={n} value={n}>
-                          {n}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      className="text-muted-foreground text-xs underline"
-                      onClick={() => onQuantity(line.variantId, 0)}
-                    >
-                      Remove
-                    </button>
-                  </div>
+        <ul className="divide-y">
+          {lines.map((line) => (
+            <li key={line.variantId} className="flex gap-3 py-3">
+              <ProductPhoto
+                url={line.imageUrl}
+                alt=""
+                sizes="64px"
+                className="size-16 shrink-0 rounded-md"
+              />
+              <div className="min-w-0 flex-1">
+                <Link href={`/products/${line.slug}`} className="font-medium text-sm">
+                  {line.productName}
+                </Link>
+                {line.variantLabel && (
+                  <p className="text-muted-foreground text-xs">{line.variantLabel}</p>
+                )}
+                <span className="mt-1 inline-block rounded bg-brand-purple-mist px-1.5 py-0.5 font-semibold text-[10px] text-brand-purple uppercase">
+                  In stock
+                </span>
+                {line.quantity > line.inStock && (
+                  <p className="mt-1 text-destructive text-xs">
+                    {line.inStock > 0
+                      ? `Only ${line.inStock} left. Lower the quantity.`
+                      : "Sold out. Remove it to continue."}
+                  </p>
+                )}
+                <div className="mt-2 flex items-center gap-3">
+                  <select
+                    aria-label={`Quantity of ${line.productName}`}
+                    value={line.quantity}
+                    onChange={(e) => onQuantity(line.variantId, Number(e.target.value))}
+                    className="h-8 rounded-md border bg-card px-2 text-sm"
+                  >
+                    {Array.from(
+                      { length: Math.max(line.quantity, line.inStock, 1) },
+                      (_, i) => i + 1,
+                    ).map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="text-muted-foreground text-xs underline"
+                    onClick={() => onQuantity(line.variantId, 0)}
+                  >
+                    Remove
+                  </button>
                 </div>
-                <p className="font-semibold text-sm">{cedi(line.storePrice * line.quantity)}</p>
-              </li>
-            ))}
-          </ul>
-          <div className="rounded-lg bg-brand-purple-mist p-4 text-sm">
-            <p className="font-semibold">You pay once. We make it 1 order.</p>
-            <p className="mt-1 text-muted-foreground">
-              1. In-stock order: ready for pickup as soon as you pay.
-            </p>
-          </div>
-        </>
+              </div>
+              <p className="font-semibold text-sm">{cedi(line.storePrice * line.quantity)}</p>
+            </li>
+          ))}
+        </ul>
       )}
+      <div className="rounded-lg bg-brand-purple-mist p-4 text-sm">
+        <p className="font-semibold">
+          {orders.length === 1
+            ? "You pay once. We make it 1 order."
+            : `You pay once. We split it into ${orders.length} orders.`}
+        </p>
+        <ol className="mt-1 space-y-0.5 text-muted-foreground">
+          {orders.map((text, i) => (
+            <li key={text}>
+              {i + 1}. {text}
+            </li>
+          ))}
+        </ol>
+      </div>
     </div>
   );
 }
 
 /**
- * The Bag's Pre-order lines. Each is capped at what's left in its window; they're paid for at
- * a Pre-order Checkout, so the In-stock items check out on their own for now.
+ * One Order Window's lines in the Bag, the Pre-order they become. Each line is capped at
+ * what's left in the window, and together they must meet its Minimum Order Quantity.
  */
 function PreorderLines({
-  lines,
+  window,
   onQuantity,
 }: {
-  lines: PreorderLine[];
+  window: WindowGroup;
   onQuantity: (variantId: string, quantity: number, windowId?: string) => void;
 }) {
   return (
-    <section className="space-y-2">
+    <section>
       <ul className="divide-y">
-        {lines.map((line) => (
+        {window.lines.map((line) => (
           <li key={`${line.windowId}:${line.variantId}`} className="flex gap-3 py-3">
             <ProductPhoto
               url={line.imageUrl}
@@ -597,10 +677,12 @@ function PreorderLines({
           </li>
         ))}
       </ul>
-      <p className="rounded-lg bg-brand-gold-mist p-3 text-sm">
-        Your Pre-orders are saved in your Bag. Paying for Pre-orders online opens soon; In-stock
-        items below can be checked out now.
-      </p>
+      {window.short > 0 && (
+        <p className="rounded-lg bg-red-50 p-3 text-destructive text-sm dark:bg-red-950/40">
+          {window.productName} needs at least {window.minimum} per Pre-order, any mix of options.
+          You have {window.units}. Add {window.short} more to continue.
+        </p>
+      )}
     </section>
   );
 }
@@ -609,8 +691,18 @@ function PickupNote() {
   return <p className="text-muted-foreground text-sm">You're signed in.</p>;
 }
 
+type ReviewLine = {
+  variantId: string;
+  orderWindowId?: string;
+  productName: string;
+  variantLabel: string;
+  quantity: number;
+  unitPrice: number;
+};
+
 function ReviewStep({
   lines,
+  windows,
   name,
   phone,
   pickupPoint,
@@ -618,13 +710,9 @@ function ReviewStep({
   total,
   onEdit,
 }: {
-  lines: {
-    variantId: string;
-    productName: string;
-    variantLabel: string;
-    quantity: number;
-    unitPrice: number;
-  }[];
+  lines: ReviewLine[];
+  /** The Bag's windows, for each Pre-order's close date. */
+  windows: WindowGroup[];
   name?: string;
   phone?: string;
   pickupPoint?: string;
@@ -633,6 +721,25 @@ function ReviewStep({
   total: number;
   onEdit: (step: Step) => void;
 }) {
+  // One card per order: the In-stock lines first, then one Pre-order per window.
+  const store = lines.filter((line) => !line.orderWindowId);
+  const orders: {
+    windowId?: string;
+    closesAt?: number;
+    lines: ReviewLine[];
+  }[] = [...(store.length > 0 ? [{ lines: store }] : [])];
+  for (const line of lines) {
+    if (!line.orderWindowId) continue;
+    const order = orders.find((o) => o.windowId === line.orderWindowId);
+    if (order) order.lines.push(line);
+    else {
+      orders.push({
+        windowId: line.orderWindowId,
+        closesAt: windows.find((w) => w.windowId === line.orderWindowId)?.closesAt,
+        lines: [line],
+      });
+    }
+  }
   return (
     <div className="space-y-4 text-sm">
       <Block title="Contact" onEdit={() => onEdit("pickup")}>
@@ -658,48 +765,58 @@ function ReviewStep({
           )}
         </Block>
       )}
-      <div className="rounded-lg border bg-card p-4">
-        <div className="flex items-center justify-between">
-          <p className="font-semibold">Order 1 · In stock</p>
-          <button
-            type="button"
-            className="font-semibold text-brand-purple text-xs"
-            onClick={() => onEdit("bag")}
-          >
-            Edit
-          </button>
+      {orders.map((order, i) => (
+        <div key={order.windowId ?? "store"} className="rounded-lg border bg-card p-4">
+          <div className="flex items-center justify-between">
+            <p className="font-semibold">
+              Order {i + 1} · {order.windowId ? "Pre-order" : "In stock"}
+            </p>
+            <button
+              type="button"
+              className="font-semibold text-brand-purple text-xs"
+              onClick={() => onEdit("bag")}
+            >
+              Edit
+            </button>
+          </div>
+          <ul className="mt-2 space-y-1">
+            {order.lines.map((line) => (
+              <li key={line.variantId} className="flex justify-between gap-3">
+                <span>
+                  {line.quantity}× {line.productName}
+                  {line.variantLabel && (
+                    <span className="text-muted-foreground"> · {line.variantLabel}</span>
+                  )}
+                </span>
+                <span>{cedi(line.unitPrice * line.quantity)}</span>
+              </li>
+            ))}
+            {!order.windowId && fulfilment.method === "delivery" && (
+              <li className="flex justify-between gap-3">
+                <span>Delivery Fee</span>
+                <span>
+                  {fulfilment.deliveryFee === undefined
+                    ? "quoted by SMS"
+                    : cedi(fulfilment.deliveryFee)}
+                </span>
+              </li>
+            )}
+          </ul>
+          <p className="mt-2 text-muted-foreground text-xs">
+            {order.windowId
+              ? `Item Payment today. Arrives after the window closes${
+                  order.closesAt ? ` on ${closeDay(order.closesAt)}` : ""
+                }. On arrival: Shipping Fee${
+                  fulfilment.method === "delivery" ? " and delivery" : ""
+                }, billed then.`
+              : fulfilment.method === "pickup"
+                ? "Ready for pickup as soon as you pay."
+                : fulfilment.deliveryFee === undefined
+                  ? "We text you its Delivery Fee to pay before we send it."
+                  : "We deliver it as soon as you pay, and text you when it's on its way."}
+          </p>
         </div>
-        <ul className="mt-2 space-y-1">
-          {lines.map((line) => (
-            <li key={line.variantId} className="flex justify-between gap-3">
-              <span>
-                {line.quantity}× {line.productName}
-                {line.variantLabel && (
-                  <span className="text-muted-foreground"> · {line.variantLabel}</span>
-                )}
-              </span>
-              <span>{cedi(line.unitPrice * line.quantity)}</span>
-            </li>
-          ))}
-          {fulfilment.method === "delivery" && (
-            <li className="flex justify-between gap-3">
-              <span>Delivery Fee</span>
-              <span>
-                {fulfilment.deliveryFee === undefined
-                  ? "quoted by SMS"
-                  : cedi(fulfilment.deliveryFee)}
-              </span>
-            </li>
-          )}
-        </ul>
-        <p className="mt-2 text-muted-foreground text-xs">
-          {fulfilment.method === "pickup"
-            ? "Ready for pickup as soon as you pay."
-            : fulfilment.deliveryFee === undefined
-              ? "We text you its Delivery Fee to pay before we send it."
-              : "We deliver it as soon as you pay, and text you when it's on its way."}
-        </p>
-      </div>
+      ))}
       <div className="flex justify-between font-semibold text-base">
         <span>Total today</span>
         <span>{cedi(total)}</span>
@@ -784,6 +901,7 @@ function DeliveryForm({
   zoneId,
   onZone,
   orderCount,
+  preorderCount,
   address,
   onAddress,
   defaultName,
@@ -793,6 +911,8 @@ function DeliveryForm({
   zoneId: string;
   onZone: (zoneId: string) => void;
   orderCount: number;
+  /** Of those, Pre-orders: each pays its Delivery Fee on arrival, not today. */
+  preorderCount: number;
   address: Address;
   onAddress: (address: Address) => void;
   defaultName: string;
@@ -843,6 +963,8 @@ function DeliveryForm({
                 {orderCount}× {orderCount === 1 ? "delivery" : "deliveries"}, {cedi(zone.fee)} each.
               </span>{" "}
               Every order is delivered separately as it becomes ready.
+              {preorderCount > 0 &&
+                ` ${preorderCount === orderCount ? "Each" : "A"} Pre-order pays its fee on arrival, with its Shipping Fee.`}
             </p>
           )}
         </div>

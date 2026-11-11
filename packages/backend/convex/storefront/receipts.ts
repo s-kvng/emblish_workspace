@@ -1,9 +1,9 @@
 import { v } from "convex/values";
 
 import { query } from "../_generated/server";
-import { fulfilmentAsShown, shownFulfilment } from "../model/fulfilment";
+import { deliveryFeeToday, fulfilmentAsShown, shownFulfilment } from "../model/fulfilment";
 import { pickupLocation } from "../model/settings";
-import { orderStatus } from "../schema";
+import { orderKind, orderStatus } from "../schema";
 
 /**
  * A Receipt by its `/r/` code: public to whoever holds the link, like the SMS that carries
@@ -23,9 +23,15 @@ export const get = query({
       pickupLocation: v.string(),
       orders: v.array(
         v.object({
+          kind: orderKind,
           reference: v.string(),
           status: orderStatus,
-          /** Pickup only: a Delivery order's code isn't for the Customer to use. */
+          /**
+           * Pesewas of this payment that went to the order: a Store Order's lines and Delivery
+           * Fee, or a Pre-order's Item Payment.
+           */
+          amount: v.number(),
+          /** Store Orders for Pickup only: a Pre-order's goods haven't arrived to collect yet. */
           pickupCode: v.optional(v.string()),
           fulfilment: shownFulfilment,
           lines: v.array(
@@ -58,10 +64,18 @@ export const get = query({
         .query("orderLines")
         .withIndex("by_order", (q) => q.eq("orderId", order._id))
         .collect();
+      const itemsTotal = lines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0);
       orders.push({
+        kind: order.kind,
         reference: order.reference,
         status: order.status,
-        ...(order.fulfilment.method === "pickup" ? { pickupCode: order.pickupCode } : {}),
+        amount:
+          order.kind === "preorder"
+            ? (order.itemPayment ?? itemsTotal)
+            : itemsTotal + deliveryFeeToday(order.fulfilment),
+        ...(order.kind === "store" && order.fulfilment.method === "pickup"
+          ? { pickupCode: order.pickupCode }
+          : {}),
         fulfilment: fulfilmentAsShown(order.fulfilment),
         lines: lines.map(({ productName, variantLabel, quantity, unitPrice }) => ({
           productName,

@@ -24,7 +24,14 @@ async function ownCheckout(
 /** Pay: submits the Bag as a Checkout, holding its Stock for 30 minutes. */
 export const start = mutation({
   args: {
-    lines: v.array(v.object({ variantId: v.id("variants"), quantity: v.number() })),
+    /** In-stock lines, and Pre-order lines naming the Order Window they're ordered in. */
+    lines: v.array(
+      v.object({
+        variantId: v.id("variants"),
+        quantity: v.number(),
+        windowId: v.optional(v.id("orderWindows")),
+      }),
+    ),
     /** Asked once, at the Pickup or Delivery step of the Customer's first Checkout. */
     name: v.optional(v.string()),
     /** Pickup when left out. */

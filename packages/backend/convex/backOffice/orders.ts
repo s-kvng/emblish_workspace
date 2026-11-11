@@ -32,6 +32,7 @@ import { pickupLocation } from "../model/settings";
 import {
   deliveryFailureReason,
   orderEventKind,
+  orderKind,
   orderStatus,
   overrideReason,
   refundLine,
@@ -195,7 +196,7 @@ export const get = query({
   args: { orderId: v.id("orders") },
   returns: v.object({
     orderId: v.id("orders"),
-    kind: v.literal("store"),
+    kind: orderKind,
     reference: v.string(),
     status: orderStatus,
     placedAt: v.number(),

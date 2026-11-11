@@ -11,13 +11,13 @@ import {
   refundsOnOrder,
 } from "../model/orders";
 import { pickupLocation } from "../model/settings";
-import { orderEventKind, orderStatus, refundKind } from "../schema";
+import { orderEventKind, orderKind, orderStatus, refundKind } from "../schema";
 
 const card = v.object({
   orderId: v.id("orders"),
-  /** `S-0001`. */
+  /** `S-0001` for a Store Order, `P-0001` for a Pre-order. */
   reference: v.string(),
-  kind: v.literal("store"),
+  kind: orderKind,
   status: orderStatus,
   /** The Customer has something to do: a Pickup Code to show (an invoice to pay, later). */
   needsAction: v.boolean(),
