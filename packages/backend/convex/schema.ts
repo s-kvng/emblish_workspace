@@ -12,6 +12,26 @@ export const productOption = v.object({
   name: v.string(),
   values: v.array(v.string()),
 });
+/**
+ * An Order Window's stages, in order. `draft` waits for the Owner's Pre-order prices and is
+ * never shown to Customers; the stage list is fixed in code.
+ */
+export const windowStages = [
+  "draft",
+  "open",
+  "closed",
+  "orderedFromSupplier",
+  "inTransit",
+  "arrived",
+] as const;
+export const windowStage = v.union(
+  v.literal("draft"),
+  v.literal("open"),
+  v.literal("closed"),
+  v.literal("orderedFromSupplier"),
+  v.literal("inTransit"),
+  v.literal("arrived"),
+);
 /** Every way Stock changes; see GLOSSARY.md, Stock Movement. */
 export const stockMovementKind = v.union(
   v.literal("arrival"),
@@ -162,7 +182,10 @@ export const refundMethod = v.union(
   v.literal("other"),
 );
 /** Units of one order line a cancel or Refund covers. */
-export const refundLine = v.object({ orderLineId: v.id("orderLines"), quantity: v.number() });
+export const refundLine = v.object({
+  orderLineId: v.id("orderLines"),
+  quantity: v.number(),
+});
 const invitationStatus = v.union(
   v.literal("pending"),
   v.literal("accepted"),
@@ -247,6 +270,8 @@ export default defineSchema({
     options: v.array(productOption),
     /** Offered In-stock at its Store Prices; off means Pre-order only, through Order Windows. */
     sellInStock: v.boolean(),
+    /** The next Order Window's number (W1, W2, …); missing reads as 1. */
+    nextWindowNumber: v.optional(v.number()),
   })
     .index("by_slug", ["slug"])
     .index("by_status_and_category", ["status", "categoryId"]),
@@ -271,6 +296,51 @@ export default defineSchema({
   })
     .index("by_product", ["productId"])
     .index("by_sku", ["sku"]),
+
+  // A period during which a Product takes Pre-orders; one supplier order, one arrival.
+  orderWindows: defineTable({
+    productId: v.id("products"),
+    /** W1, W2, … per Product. */
+    number: v.number(),
+    stage: windowStage,
+    /** When it opened; missing while it's a draft. */
+    opensAt: v.optional(v.number()),
+    /** When it closes on its own, unless Staff close it sooner or extend it. */
+    closesAt: v.number(),
+    /** Fewest units per Pre-order, counted across the Product's Variants. */
+    minimumOrderQuantity: v.optional(v.number()),
+    /** Integer pesewas per unit, shown to Customers as an estimate. */
+    shippingFeeEstimate: v.optional(v.number()),
+    /** The one `scheduler.runAt(closesAt)` auto-close job; Extend and Close now replace it. */
+    closeJobId: v.optional(v.id("_scheduled_functions")),
+    createdBy: v.id("staff"),
+  })
+    .index("by_product_and_stage", ["productId", "stage"])
+    .index("by_stage_and_closesAt", ["stage", "closesAt"]),
+
+  // One per Variant a window offers.
+  windowVariants: defineTable({
+    orderWindowId: v.id("orderWindows"),
+    variantId: v.id("variants"),
+    /** Integer pesewas. Only an Owner sets it; a window can't open without one on every row. */
+    preorderPrice: v.optional(v.number()),
+    /** Most units it takes across all Pre-orders; missing means uncapped. */
+    cap: v.optional(v.number()),
+    /** Cached units on paid Pre-orders. */
+    preordered: v.number(),
+    /** Cached units under active window-cap holds. */
+    held: v.number(),
+  })
+    .index("by_window", ["orderWindowId"])
+    .index("by_variant", ["variantId"]),
+
+  // A window's stage changes, oldest first: its timeline in the Back Office and for Customers.
+  windowStageEvents: defineTable({
+    orderWindowId: v.id("orderWindows"),
+    stage: windowStage,
+    /** Missing when the system did it, such as the auto-close. */
+    staffId: v.optional(v.id("staff")),
+  }).index("by_window", ["orderWindowId"]),
 
   // Append-only: Stock is the sum of a Variant's rows, never edited directly.
   stockMovements: defineTable({

@@ -18,6 +18,7 @@ import type * as backOffice_refunds from "../backOffice/refunds.js";
 import type * as backOffice_settings from "../backOffice/settings.js";
 import type * as backOffice_staff from "../backOffice/staff.js";
 import type * as backOffice_stock from "../backOffice/stock.js";
+import type * as backOffice_windows from "../backOffice/windows.js";
 import type * as healthCheck from "../healthCheck.js";
 import type * as http from "../http.js";
 import type * as lib_guards from "../lib/guards.js";
@@ -34,6 +35,7 @@ import type * as model_fulfilment from "../model/fulfilment.js";
 import type * as model_invitations from "../model/invitations.js";
 import type * as model_money from "../model/money.js";
 import type * as model_orders from "../model/orders.js";
+import type * as model_orderWindows from "../model/orderWindows.js";
 import type * as model_payments from "../model/payments.js";
 import type * as model_products from "../model/products.js";
 import type * as model_seev from "../model/seev.js";
@@ -57,6 +59,7 @@ import type * as system_seev from "../system/seev.js";
 import type * as system_sms from "../system/sms.js";
 import type * as system_staff from "../system/staff.js";
 import type * as system_stock from "../system/stock.js";
+import type * as system_windows from "../system/windows.js";
 
 import type {
   ApiFromModules,
@@ -75,6 +78,7 @@ declare const fullApi: ApiFromModules<{
   "backOffice/settings": typeof backOffice_settings;
   "backOffice/staff": typeof backOffice_staff;
   "backOffice/stock": typeof backOffice_stock;
+  "backOffice/windows": typeof backOffice_windows;
   healthCheck: typeof healthCheck;
   http: typeof http;
   "lib/guards": typeof lib_guards;
@@ -91,6 +95,7 @@ declare const fullApi: ApiFromModules<{
   "model/invitations": typeof model_invitations;
   "model/money": typeof model_money;
   "model/orders": typeof model_orders;
+  "model/orderWindows": typeof model_orderWindows;
   "model/payments": typeof model_payments;
   "model/products": typeof model_products;
   "model/seev": typeof model_seev;
@@ -114,6 +119,7 @@ declare const fullApi: ApiFromModules<{
   "system/sms": typeof system_sms;
   "system/staff": typeof system_staff;
   "system/stock": typeof system_stock;
+  "system/windows": typeof system_windows;
 }>;
 
 /**

@@ -33,6 +33,7 @@ const ready = {
   categoryId: "category",
   photoCount: 1,
   sellInStock: true,
+  offeredForPreorder: false,
   variants: [
     { sku: "KWT-RED", storePrice: 45000 },
     { sku: "KWT-BLU", storePrice: 45000 },
@@ -65,12 +66,13 @@ describe("The publish checklist", () => {
         categoryId: undefined,
         photoCount: 0,
         sellInStock: true,
+        offeredForPreorder: false,
         variants: [{ sku: "KWT-RED" }, { sku: undefined, storePrice: 100 }],
       }),
     ).toEqual(["name", "category", "photo", "sku", "storePrice"]);
   });
 
-  test("a Pre-order-only Product isn't published from here, and doesn't need Store Prices", () => {
+  test("a Pre-order-only Product isn't published from here until it's been in an Order Window, and doesn't need Store Prices", () => {
     const preorderOnly = {
       ...ready,
       sellInStock: false,
@@ -78,6 +80,7 @@ describe("The publish checklist", () => {
     };
     expect(failing(preorderOnly)).toEqual(["sellInStock"]);
     expect(publishChecklist(preorderOnly).some((check) => check.key === "storePrice")).toBe(false);
+    expect(failing({ ...preorderOnly, offeredForPreorder: true })).toEqual([]);
   });
 
   test("Staff whose only blockers are prices are waiting for the Owner", () => {

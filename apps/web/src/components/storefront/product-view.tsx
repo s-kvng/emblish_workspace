@@ -3,7 +3,9 @@
 import type { api } from "@emblish_workspace/backend/convex/_generated/api";
 import {
   buyableNow,
+  defaultOffer,
   type Picks,
+  preorderable,
   startingPicks,
   valueAvailability,
   variantFor,
@@ -41,18 +43,42 @@ export default function ProductView({
   return <ProductDetails product={product} />;
 }
 
+type Offer = "buyNow" | "preorder";
+
+/** Most units of an uncapped Pre-order the stepper offers in one go. */
+const UNCAPPED_STEP_LIMIT = 99;
+
 function ProductDetails({ product }: { product: Product }) {
-  const { variants, options, gallery } = product;
+  const { variants, options, gallery, window } = product;
   const bag = useBag();
   const [picks, setPicks] = useState<Picks>(() => startingPicks(variants));
   const [photo, setPhoto] = useState(() => photoIndexFor(product, startingPicks(variants)));
   const [wanted, setWanted] = useState(1);
+  const [chosen, setChosen] = useState<Offer | undefined>();
 
   const variant = variantFor(variants, picks) ?? variants[0];
   if (!variant) return null;
   const buyable = buyableNow(variant);
-  // Stock can drop while the page is open, so the quantity never outgrows it.
-  const quantity = Math.max(1, Math.min(wanted, variant.inStock));
+  const canPreorder = preorderable(variant) && window !== null;
+  // The Customer's pick holds while it's still possible; otherwise Buy now when it's available.
+  const fallback = defaultOffer(variant);
+  const offer: Offer | undefined =
+    chosen === "buyNow" && buyable
+      ? "buyNow"
+      : chosen === "preorder" && canPreorder
+        ? "preorder"
+        : fallback === "none"
+          ? undefined
+          : fallback;
+  const limit =
+    offer === "buyNow"
+      ? variant.inStock
+      : offer === "preorder"
+        ? (variant.preorder?.left ?? UNCAPPED_STEP_LIMIT)
+        : 0;
+  const unitPrice = offer === "buyNow" ? variant.storePrice : variant.preorder?.price;
+  // Stock and caps can drop while the page is open, so the quantity never outgrows them.
+  const quantity = Math.max(1, Math.min(wanted, limit));
 
   const pick = (optionIndex: number, value: string) => {
     const next = picks.map((current, i) => (i === optionIndex ? value : current));
@@ -63,19 +89,38 @@ function ProductDetails({ product }: { product: Product }) {
     if (index !== undefined) setPhoto(index);
   };
 
+  const choose = (next: Offer) => {
+    setChosen(next);
+    setWanted(1);
+  };
+
   const addToBag = () => {
+    if (!offer) return;
+    const preorder = offer === "preorder" && window;
     const { added, inBag } = bag.add(
-      { variantId: variant._id, slug: product.slug, quantity },
-      variant.inStock,
+      {
+        variantId: variant._id,
+        slug: product.slug,
+        quantity,
+        ...(preorder ? { windowId: window.windowId } : {}),
+      },
+      limit,
     );
+    const allOf = preorder
+      ? `that's all ${inBag} left in this window`
+      : `that's all ${inBag} we have in stock`;
     if (added === 0) {
-      toast.info(`Your Bag already has all ${inBag} we have in stock.`);
+      toast.info(
+        preorder
+          ? `Your Bag already has all ${inBag} left in this window.`
+          : `Your Bag already has all ${inBag} we have in stock.`,
+      );
       return;
     }
-    toast.success(`${product.name} added to your Bag`, {
+    toast.success(`${product.name}${preorder ? " Pre-order" : ""} added to your Bag`, {
       description:
         added < quantity
-          ? `Only ${added} more could go in: that's all ${inBag} we have in stock.`
+          ? `Only ${added} more could go in: ${allOf}.`
           : inBag > added
             ? `${inBag} of these in your Bag now.`
             : undefined,
@@ -144,21 +189,22 @@ function ProductDetails({ product }: { product: Product }) {
             </legend>
             <div className="flex flex-wrap gap-2">
               {option.values.map((value) => {
-                const inStock =
-                  valueAvailability(variants, picks, optionIndex, value) === "inStock";
+                const availability = valueAvailability(variants, picks, optionIndex, value);
                 const picked = picks[optionIndex] === value;
                 return (
                   <button
                     key={value}
                     type="button"
                     aria-pressed={picked}
-                    aria-label={`${value}${inStock ? "" : ", unavailable"}`}
+                    aria-label={`${value}${availability === "inStock" ? "" : availability === "preorder" ? ", Pre-order only" : ", unavailable"}`}
                     onClick={() => pick(optionIndex, value)}
-                    className={`relative rounded-md border bg-card px-3 py-1.5 text-sm ${picked ? "border-primary ring-1 ring-primary" : ""} ${inStock ? "" : "text-muted-foreground line-through"}`}
+                    className={`relative rounded-md border bg-card px-3 py-1.5 text-sm ${picked ? "border-primary ring-1 ring-primary" : ""} ${availability === "unavailable" ? "text-muted-foreground line-through" : ""}`}
                   >
                     {value}
-                    {inStock && (
-                      <span className="absolute -top-1 -right-1 size-2 rounded-full bg-brand-purple" />
+                    {availability !== "unavailable" && (
+                      <span
+                        className={`absolute -top-1 -right-1 size-2 rounded-full ${availability === "inStock" ? "bg-brand-purple" : "bg-brand-gold"}`}
+                      />
                     )}
                   </button>
                 );
@@ -167,26 +213,56 @@ function ProductDetails({ product }: { product: Product }) {
           </fieldset>
         ))}
         {options.length > 0 && (
-          <p className="flex items-center gap-1 text-muted-foreground text-xs">
-            <span className="size-2 rounded-full bg-brand-purple" /> In stock
+          <p className="flex items-center gap-3 text-muted-foreground text-xs">
+            <span className="flex items-center gap-1">
+              <span className="size-2 rounded-full bg-brand-purple" /> In stock
+            </span>
+            {window && (
+              <span className="flex items-center gap-1">
+                <span className="size-2 rounded-full bg-brand-gold" /> Pre-order
+              </span>
+            )}
           </p>
         )}
 
-        <div
-          className={`rounded-lg border bg-card p-3 ${buyable ? "border-primary ring-1 ring-primary" : "opacity-60"}`}
-        >
-          <p className="font-semibold text-xs uppercase">Buy now</p>
-          <p className="mt-1 font-semibold text-lg">
-            {variant.storePrice !== undefined ? cedi(variant.storePrice) : "—"}
-          </p>
-          <p className="text-muted-foreground text-xs">
-            {buyable
-              ? `${variant.inStock} in stock`
-              : variant.storePrice !== undefined
-                ? "Sold out"
-                : "Not sold in store"}
-          </p>
+        <div className={`grid gap-3 ${window ? "grid-cols-2" : ""}`}>
+          <OfferCard
+            title="Buy now"
+            price={variant.storePrice}
+            selected={offer === "buyNow"}
+            disabled={!buyable}
+            onSelect={() => choose("buyNow")}
+            note={
+              buyable
+                ? `${variant.inStock} in stock`
+                : variant.storePrice !== undefined
+                  ? "Sold out"
+                  : "Not sold in store"
+            }
+          />
+          {window && (
+            <OfferCard
+              title="Pre-order"
+              price={variant.preorder?.price}
+              selected={offer === "preorder"}
+              disabled={!canPreorder}
+              onSelect={() => choose("preorder")}
+              note={
+                !variant.preorder
+                  ? "Not in this window"
+                  : !canPreorder
+                    ? "Pre-order full for this option"
+                    : window.shippingFeeEstimate !== undefined
+                      ? `+ shipping ~${cedi(window.shippingFeeEstimate)}`
+                      : "+ shipping, on arrival"
+              }
+            />
+          )}
         </div>
+
+        {offer === "preorder" && window && (
+          <PreorderFacts window={window} left={variant.preorder?.left} />
+        )}
       </div>
 
       {/* Sticky, not fixed, so it stops above the footer instead of covering it. */}
@@ -196,7 +272,7 @@ function ProductDetails({ product }: { product: Product }) {
             <button
               type="button"
               aria-label="One fewer"
-              disabled={!buyable || quantity <= 1}
+              disabled={!offer || quantity <= 1}
               onClick={() => setWanted(quantity - 1)}
               className="grid size-10 place-items-center disabled:opacity-40"
             >
@@ -208,7 +284,7 @@ function ProductDetails({ product }: { product: Product }) {
             <button
               type="button"
               aria-label="One more"
-              disabled={!buyable || quantity >= variant.inStock}
+              disabled={!offer || quantity >= limit}
               onClick={() => setWanted(quantity + 1)}
               className="grid size-10 place-items-center disabled:opacity-40"
             >
@@ -217,18 +293,103 @@ function ProductDetails({ product }: { product: Product }) {
           </div>
           <button
             type="button"
-            disabled={!buyable}
+            disabled={!offer}
             onClick={addToBag}
             className="h-11 flex-1 rounded-md bg-primary font-semibold text-primary-foreground text-sm disabled:bg-muted disabled:text-muted-foreground"
           >
-            {buyable && variant.storePrice !== undefined
-              ? `Buy now · ${cedi(variant.storePrice * quantity)}`
-              : variant.storePrice !== undefined
+            {offer && unitPrice !== undefined
+              ? `${offer === "buyNow" ? "Buy now" : "Pre-order"} · ${cedi(unitPrice * quantity)}`
+              : variant.storePrice !== undefined || variant.preorder
                 ? "Sold out"
                 : "Not sold in store"}
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** One of the side-by-side offers for the picked Variant; the Customer picks one. */
+function OfferCard({
+  title,
+  price,
+  note,
+  selected,
+  disabled,
+  onSelect,
+}: {
+  title: string;
+  price: number | undefined;
+  note: string;
+  selected: boolean;
+  disabled: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      disabled={disabled}
+      onClick={onSelect}
+      className={`rounded-lg border bg-card p-3 text-left ${selected ? "border-primary ring-1 ring-primary" : ""} ${disabled ? "opacity-60" : ""}`}
+    >
+      <p className="font-semibold text-xs uppercase">{title}</p>
+      <p className="mt-1 font-semibold text-lg">{price !== undefined ? cedi(price) : "—"}</p>
+      <p className="text-muted-foreground text-xs">{note}</p>
+    </button>
+  );
+}
+
+const DAY = 24 * 60 * 60 * 1000;
+
+/** The Pre-order facts: when orders close, arrival, the Shipping Fee, the minimum and the cap. */
+function PreorderFacts({
+  window,
+  left,
+}: {
+  window: NonNullable<Product["window"]>;
+  left: number | undefined;
+}) {
+  const daysLeft = Math.max(0, Math.ceil((window.closesAt - Date.now()) / DAY));
+  const closes = new Date(window.closesAt).toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
+  const facts: [string, string][] = [
+    [
+      "Orders close",
+      `${closes} · ${daysLeft === 0 ? "today" : `${daysLeft} day${daysLeft === 1 ? "" : "s"} left`}`,
+    ],
+    ["Expected arrival", "We text you the dates once it's ordered from the supplier"],
+    [
+      "Shipping Fee",
+      window.shippingFeeEstimate !== undefined
+        ? `About ${cedi(window.shippingFeeEstimate)} per unit, confirmed on arrival`
+        : "Confirmed on arrival",
+    ],
+  ];
+  if (window.minimumOrderQuantity !== undefined && window.minimumOrderQuantity > 1) {
+    facts.push(["Minimum", `${window.minimumOrderQuantity} units per Pre-order, across options`]);
+  }
+  return (
+    <div className="rounded-lg border border-brand-gold/40 bg-brand-gold-mist p-4 text-sm">
+      <dl className="space-y-2">
+        {facts.map(([term, detail]) => (
+          <div key={term} className="flex justify-between gap-4">
+            <dt className="text-muted-foreground">{term}</dt>
+            <dd className="text-right font-medium">{detail}</dd>
+          </div>
+        ))}
+      </dl>
+      {left !== undefined && (
+        <p className="mt-3 font-semibold text-brand-purple text-xs">
+          Only {left} left in this window
+        </p>
+      )}
+      <p className="mt-3 text-muted-foreground text-xs">
+        You pay for the goods now and the Shipping Fee when they arrive.
+      </p>
     </div>
   );
 }

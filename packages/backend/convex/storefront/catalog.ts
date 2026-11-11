@@ -5,7 +5,13 @@ import { v } from "convex/values";
 import { query } from "../_generated/server";
 import { listCategories } from "../model/categories";
 import { listZones, zoneAsShown } from "../model/deliveryZones";
-import { findStorefrontProduct, shelfCards, shelfVariants } from "../model/products";
+import {
+  closingSoonCards,
+  findStorefrontProduct,
+  openWindowFor,
+  shelfCards,
+  shelfVariants,
+} from "../model/products";
 import { pickupLocation } from "../model/settings";
 import { productOption } from "../schema";
 
@@ -16,9 +22,11 @@ const shelfCardValidator = v.object({
   /** Integer pesewas: the lowest Store Price that can be bought now, or any when sold out. */
   fromPrice: v.number(),
   soldOut: v.boolean(),
+  /** It also has an open Order Window: the ALSO PRE-ORDER badge. */
+  alsoPreorder: v.boolean(),
 });
 
-/** Home: the Category tiles and the "Ready to take home" grid. */
+/** Home: the Category tiles, the "Closing soon" rail and the "Ready to take home" grid. */
 export const home = query({
   args: {},
   returns: v.object({
@@ -30,9 +38,23 @@ export const home = query({
       }),
     ),
     inStock: v.array(shelfCardValidator),
+    /** Open windows, soonest close first. */
+    closingSoon: v.array(
+      v.object({
+        slug: v.string(),
+        name: v.string(),
+        coverUrl: v.optional(v.string()),
+        /** Integer pesewas: the lowest Pre-order price in the window. */
+        fromPrice: v.number(),
+        closesAt: v.number(),
+        /** Every offered Variant has reached its cap. */
+        full: v.boolean(),
+      }),
+    ),
   }),
   handler: async (ctx) => {
     const inStock = await shelfCards(ctx);
+    const closingSoon = await closingSoonCards(ctx);
     // A tile per Category with something to show, wearing its first card's cover.
     const categories = [];
     for (const category of await listCategories(ctx)) {
@@ -45,7 +67,7 @@ export const home = query({
         });
       }
     }
-    return { categories, inStock };
+    return { categories, inStock, closingSoon };
   },
 });
 
@@ -88,6 +110,19 @@ export const product = query({
           inStock: v.number(),
           /** One of the gallery's photos. */
           imageId: v.optional(v.id("_storage")),
+          /** Set while the open window offers it: its Pre-order price and, if capped, units left. */
+          preorder: v.optional(v.object({ price: v.number(), left: v.optional(v.number()) })),
+        }),
+      ),
+      /** The open Order Window's facts, or null when the Product isn't on Pre-order. */
+      window: v.union(
+        v.null(),
+        v.object({
+          windowId: v.id("orderWindows"),
+          closesAt: v.number(),
+          minimumOrderQuantity: v.optional(v.number()),
+          /** Integer pesewas per unit; missing means it's confirmed on arrival. */
+          shippingFeeEstimate: v.optional(v.number()),
         }),
       ),
     }),
@@ -96,6 +131,7 @@ export const product = query({
     const product = await findStorefrontProduct(ctx, slug);
     if (!product) return null;
     const category = product.categoryId ? await ctx.db.get(product.categoryId) : null;
+    const open = await openWindowFor(ctx, product._id);
     const gallery = [];
     for (const storageId of product.gallery) {
       const url = await ctx.storage.getUrl(storageId);
@@ -109,6 +145,12 @@ export const product = query({
       gallery,
       options: product.options,
       variants: await shelfVariants(ctx, product),
+      window: open && {
+        windowId: open.window._id,
+        closesAt: open.window.closesAt,
+        minimumOrderQuantity: open.window.minimumOrderQuantity,
+        shippingFeeEstimate: open.window.shippingFeeEstimate,
+      },
     };
   },
 });
@@ -150,6 +192,61 @@ export const bagLines = query({
         variantLabel: variant.optionValues.join(" / "),
         storePrice: shelf.storePrice,
         inStock: shelf.inStock,
+        imageUrl: (imageId && (await ctx.storage.getUrl(imageId))) || undefined,
+      });
+    }
+    return lines;
+  },
+});
+
+/**
+ * The Bag's Pre-order lines priced for display, in the order asked: each Variant its window
+ * still offers while the window is open on a Published Product, with the units left under any
+ * cap. Anything else is left out, so the Bag can drop it.
+ */
+export const preorderBagLines = query({
+  args: {
+    lines: v.array(v.object({ variantId: v.string(), windowId: v.string() })),
+  },
+  returns: v.array(
+    v.object({
+      variantId: v.id("variants"),
+      windowId: v.id("orderWindows"),
+      productName: v.string(),
+      slug: v.string(),
+      variantLabel: v.string(),
+      /** Integer pesewas. */
+      preorderPrice: v.number(),
+      /** Units left under the cap; missing when it's uncapped. */
+      left: v.optional(v.number()),
+      closesAt: v.number(),
+      imageUrl: v.optional(v.string()),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const lines = [];
+    for (const raw of args.lines.slice(0, 50)) {
+      const variantId = ctx.db.normalizeId("variants", raw.variantId);
+      const windowId = ctx.db.normalizeId("orderWindows", raw.windowId);
+      const variant = variantId && (await ctx.db.get(variantId));
+      const window = windowId && (await ctx.db.get(windowId));
+      const product = variant && (await ctx.db.get(variant.productId));
+      if (!variant || !window || !product || product.status !== "published") continue;
+      if (window.stage !== "open" || window.productId !== product._id) continue;
+      const preorder = (await shelfVariants(ctx, product)).find(
+        (s) => s._id === variant._id,
+      )?.preorder;
+      if (!preorder) continue;
+      const imageId = variant.imageId ?? product.gallery[0];
+      lines.push({
+        variantId: variant._id,
+        windowId: window._id,
+        productName: product.name,
+        slug: product.slug,
+        variantLabel: variant.optionValues.join(" / "),
+        preorderPrice: preorder.price,
+        ...(preorder.left === undefined ? {} : { left: preorder.left }),
+        closesAt: window.closesAt,
         imageUrl: (imageId && (await ctx.storage.getUrl(imageId))) || undefined,
       });
     }

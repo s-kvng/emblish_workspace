@@ -3,15 +3,21 @@
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 
-export type BagLine = { variantId: string; slug: string; quantity: number };
+/** A Variant bought In-stock, or Pre-ordered in the Order Window `windowId`. */
+export type BagLine = {
+  variantId: string;
+  slug: string;
+  quantity: number;
+  windowId?: string;
+};
 
 type Bag = {
   lines: BagLine[];
   count: number;
-  /** Adds units of a Variant, never more than `limit` of it in all. */
+  /** Adds units of a Variant (In-stock, or in one window), never more than `limit` of it in all. */
   add: (line: BagLine, limit: number) => { added: number; inBag: number };
-  /** Sets a line's quantity; 0 removes it. */
-  setQuantity: (variantId: string, quantity: number) => void;
+  /** Sets a line's quantity; 0 removes it. A Pre-order line is picked out by its window. */
+  setQuantity: (variantId: string, quantity: number, windowId?: string) => void;
   /** Empties the Bag, once a payment has turned it into an order. */
   clear: () => void;
 };
@@ -26,6 +32,11 @@ function readStored(): BagLine[] {
   } catch {
     return [];
   }
+}
+
+/** The same Variant In-stock and Pre-ordered are separate lines. */
+function sameLine(variantId: string, windowId: string | undefined) {
+  return (line: BagLine) => line.variantId === variantId && line.windowId === windowId;
 }
 
 export function BagProvider({ children }: { children: React.ReactNode }) {
@@ -43,21 +54,21 @@ export function BagProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const add: Bag["add"] = (line, limit) => {
-    const held = lines.find((current) => current.variantId === line.variantId)?.quantity ?? 0;
-    const quantity = Math.min(limit, held + line.quantity);
-    save([
-      ...lines.filter((current) => current.variantId !== line.variantId),
-      { ...line, quantity },
-    ]);
+    const same = sameLine(line.variantId, line.windowId);
+    const held = lines.find(same)?.quantity ?? 0;
+    const quantity = Math.max(held, Math.min(limit, held + line.quantity));
+    save([...lines.filter((current) => !same(current)), { ...line, quantity }]);
     return { added: Math.max(0, quantity - held), inBag: quantity };
   };
 
-  const setQuantity: Bag["setQuantity"] = (variantId, quantity) =>
+  const setQuantity: Bag["setQuantity"] = (variantId, quantity, windowId) => {
+    const same = sameLine(variantId, windowId);
     save(
       quantity > 0
-        ? lines.map((line) => (line.variantId === variantId ? { ...line, quantity } : line))
-        : lines.filter((line) => line.variantId !== variantId),
+        ? lines.map((line) => (same(line) ? { ...line, quantity } : line))
+        : lines.filter((line) => !same(line)),
     );
+  };
 
   // Stable, so an effect can depend on it without re-running on every render.
   const clear = useCallback(() => save([]), [save]);

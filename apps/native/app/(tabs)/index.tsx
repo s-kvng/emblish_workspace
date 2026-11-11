@@ -1,4 +1,5 @@
 import { api } from "@emblish_workspace/backend/convex/_generated/api";
+import { pickupCodeLength } from "@emblish_workspace/backend/convex/model/orders";
 import { brand } from "@emblish_workspace/brand/tokens";
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "convex/react";
@@ -8,10 +9,9 @@ import { type PropsWithChildren, useState } from "react";
 import { Image, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { pickupCodeLength } from "@emblish_workspace/backend/convex/model/orders";
-
 import { customerLabel, orderStatusLabel } from "@/components/order-labels";
 import { formatGhs } from "@/lib/money";
+import { useStaffMember } from "@/lib/staff-member";
 
 const emblem = require("@/assets/images/emblem.png");
 
@@ -20,6 +20,8 @@ export default function Today() {
   const insets = useSafeAreaInsets();
   const today = useQuery(api.backOffice.orders.today);
   const refunds = useQuery(api.backOffice.refunds.toMake);
+  const needsPrices = useQuery(api.backOffice.windows.needsPrices);
+  const isOwner = useStaffMember()?.role === "owner";
   const [query, setQuery] = useState("");
   // A Pickup Code is the shortest thing worth searching for.
   const searching = query.trim().length >= pickupCodeLength;
@@ -156,6 +158,43 @@ export default function Today() {
           ))}
         </Queue>
 
+        {needsPrices && needsPrices.length > 0 ? (
+          <Queue title="Needs prices" count={needsPrices.length} empty="Every window is priced.">
+            <Text className="px-4 pb-2 font-sans text-muted text-xs">
+              {isOwner
+                ? "Draft Order Windows waiting for your Pre-order prices."
+                : "Draft Order Windows waiting for the Owner's Pre-order prices."}
+            </Text>
+            {needsPrices.map((window) => (
+              <Link
+                key={window.windowId}
+                href={{
+                  pathname: "/windows/new",
+                  params: { windowId: window.windowId },
+                }}
+                asChild
+              >
+                <Pressable
+                  accessibilityRole="button"
+                  className="min-h-12 flex-row items-center border-border border-t px-4 py-2"
+                >
+                  <View className="flex-1">
+                    <Text className="font-sans-medium text-foreground">
+                      {window.productName} · W{window.number}
+                    </Text>
+                    <Text className="font-sans text-muted text-xs">
+                      {window.unpriced === 0
+                        ? "Priced, ready to open"
+                        : `${window.unpriced} Variant${window.unpriced === 1 ? "" : "s"} to price`}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={brand["ink-muted"]} />
+                </Pressable>
+              </Link>
+            ))}
+          </Queue>
+        ) : null}
+
         <Link href="/refunds" asChild>
           <Pressable
             accessibilityRole="button"
@@ -188,7 +227,11 @@ function Queue({
   count,
   empty,
   children,
-}: PropsWithChildren<{ title: string; count: number | undefined; empty: string }>) {
+}: PropsWithChildren<{
+  title: string;
+  count: number | undefined;
+  empty: string;
+}>) {
   return (
     <View className="rounded-2xl border border-border bg-surface">
       <View className="flex-row items-center px-4 pt-4 pb-2">
