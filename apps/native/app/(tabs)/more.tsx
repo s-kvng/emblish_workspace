@@ -32,6 +32,12 @@ export default function More() {
         detail="Create, publish and archive Products; Categories"
       />
       <MoreLink
+        href="/windows"
+        icon="time"
+        title="Order Windows"
+        detail="Open windows for Pre-orders, extend or close them"
+      />
+      <MoreLink
         href="/delivery-zones"
         icon="bicycle"
         title="Delivery Zones"
@@ -79,7 +85,7 @@ function MoreLink({
   title,
   detail,
 }: {
-  href: "/delivery-zones" | "/products" | "/staff" | "/stock" | "/store-settings";
+  href: "/delivery-zones" | "/products" | "/staff" | "/stock" | "/store-settings" | "/windows";
   icon: ComponentProps<typeof Ionicons>["name"];
   title: string;
   detail: string;

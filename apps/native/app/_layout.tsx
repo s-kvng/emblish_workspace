@@ -50,16 +50,23 @@ function StackLayout() {
         <Stack.Screen name="staff" />
         <Stack.Screen name="products/index" />
         <Stack.Screen name="products/edit" options={{ gestureEnabled: false }} />
+        <Stack.Screen name="windows/index" />
+        <Stack.Screen name="windows/product" />
+        <Stack.Screen name="windows/new" options={{ gestureEnabled: false }} />
         <Stack.Screen name="categories" />
         <Stack.Screen name="delivery-zones" />
         <Stack.Screen name="store-settings" />
         <Stack.Screen name="stock/index" />
         <Stack.Screen name="stock/variant" />
         <Stack.Screen name="orders/detail" />
+        <Stack.Screen name="refunds" />
         {/* The Counter slides up over any tab as a full-screen desk. */}
         <Stack.Screen
           name="counter"
-          options={{ presentation: "fullScreenModal", animation: "slide_from_bottom" }}
+          options={{
+            presentation: "fullScreenModal",
+            animation: "slide_from_bottom",
+          }}
         />
       </Stack.Protected>
       <Stack.Protected guard={!isAuthenticated}>

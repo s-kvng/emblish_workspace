@@ -9,7 +9,7 @@ import ProductPhoto from "./product-photo";
 
 export type ShelfCard = FunctionReturnType<typeof api.storefront.catalog.home>["inStock"][number];
 
-/** The 2-up grid of In-stock Products, each with its IN STOCK or SOLD OUT badge. */
+/** The 2-up grid of In-stock Products: IN STOCK or SOLD OUT, and ALSO PRE-ORDER with an open window. */
 export default function ShelfGrid({ cards }: { cards: ShelfCard[] }) {
   return (
     <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
@@ -26,6 +26,11 @@ export default function ShelfGrid({ cards }: { cards: ShelfCard[] }) {
             >
               {card.soldOut ? "SOLD OUT" : "IN STOCK"}
             </span>
+            {card.alsoPreorder && (
+              <span className="absolute top-8 left-2 rounded-full bg-brand-gold px-2 py-0.5 font-semibold text-[10px] text-brand-purple-deep">
+                ALSO PRE-ORDER
+              </span>
+            )}
           </Link>
           <div className="p-3">
             <p className="truncate font-medium text-sm">{card.name}</p>

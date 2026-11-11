@@ -5,6 +5,8 @@ import { type Preloaded, usePreloadedQuery } from "convex/react";
 import { ArrowRight, CreditCard, MapPin, MessageSquare, Wallet } from "lucide-react";
 import Link from "next/link";
 
+import { cedi } from "@/lib/money";
+
 import ProductPhoto from "./product-photo";
 import ShelfGrid from "./shelf-grid";
 
@@ -41,8 +43,17 @@ export default function HomeView({
 }: {
   preloaded: Preloaded<typeof api.storefront.catalog.home>;
 }) {
-  const { categories, inStock } = usePreloadedQuery(preloaded);
-  const featured = inStock.find((card) => !card.soldOut);
+  const { categories, inStock, closingSoon } = usePreloadedQuery(preloaded);
+  // The hero features a Pre-order when there's one to take, else something ready now.
+  const featuredPreorder = closingSoon.find((card) => !card.full);
+  const featured = featuredPreorder
+    ? {
+        slug: featuredPreorder.slug,
+        name: featuredPreorder.name,
+        coverUrl: featuredPreorder.coverUrl,
+        tag: daysLeftLabel(featuredPreorder.closesAt),
+      }
+    : inStock.filter((card) => !card.soldOut).map((card) => ({ ...card, tag: "ready now" }))[0];
 
   return (
     <div className="mx-auto w-full min-w-0 max-w-5xl pb-12">
@@ -58,11 +69,23 @@ export default function HomeView({
             already here.
           </p>
           <div className="mt-5 flex flex-wrap gap-2">
+            {closingSoon.length > 0 && (
+              <a
+                href="#closing-soon"
+                className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-brand-gold px-4 py-2.5 font-semibold text-brand-purple-deep text-sm"
+              >
+                Shop Pre-orders <ArrowRight className="size-4" />
+              </a>
+            )}
             <a
               href="#in-stock"
-              className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-brand-gold px-4 py-2.5 font-semibold text-brand-purple-deep text-sm"
+              className={
+                closingSoon.length > 0
+                  ? "whitespace-nowrap rounded-full border border-white/30 px-4 py-2.5 text-sm"
+                  : "flex items-center gap-1.5 whitespace-nowrap rounded-full bg-brand-gold px-4 py-2.5 font-semibold text-brand-purple-deep text-sm"
+              }
             >
-              In stock now <ArrowRight className="size-4" />
+              In stock now {closingSoon.length > 0 ? null : <ArrowRight className="size-4" />}
             </a>
             <a
               href="#how-pre-order-works"
@@ -82,7 +105,7 @@ export default function HomeView({
               className="absolute inset-x-10 bottom-0 h-40 rounded-t-[2rem]"
             />
             <span className="absolute right-6 bottom-4 rounded-full bg-white px-3 py-1 font-semibold text-brand-purple text-xs shadow-lg">
-              {featured.name} · ready now
+              {featured.name} · {featured.tag}
             </span>
           </Link>
         )}
@@ -129,6 +152,54 @@ export default function HomeView({
         </section>
       )}
 
+      {/* Closing soon */}
+      {closingSoon.length > 0 && (
+        <section id="closing-soon" className="mt-8 scroll-mt-4">
+          <h2 className="px-4 text-xl">Closing soon</h2>
+          <ul className="mt-3 flex gap-3 overflow-x-auto px-4 pb-1">
+            {closingSoon.map((card) => {
+              const urgent = daysLeft(card.closesAt) <= 7;
+              return (
+                <li key={card.slug} className="w-44 shrink-0">
+                  <Link
+                    href={`/products/${card.slug}`}
+                    className="block overflow-hidden rounded-2xl border bg-card"
+                  >
+                    <div className="relative">
+                      <ProductPhoto
+                        url={card.coverUrl}
+                        alt={card.name}
+                        sizes="176px"
+                        className={`aspect-square ${card.full ? "opacity-50 grayscale" : ""}`}
+                      />
+                      <span
+                        className={`absolute top-2 left-2 rounded-full px-2 py-0.5 font-semibold text-[10px] ${card.full ? "bg-muted text-muted-foreground" : urgent ? "bg-brand-gold text-brand-purple-deep" : "bg-white text-brand-purple"}`}
+                      >
+                        {card.full ? "FULL" : daysLeftLabel(card.closesAt).toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="p-3">
+                      <p className="truncate font-medium text-sm">{card.name}</p>
+                      <p className="text-sm">
+                        <span className="text-muted-foreground text-xs">from </span>
+                        <span className="font-semibold">{cedi(card.fromPrice)}</span>
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        Closes{" "}
+                        {new Date(card.closesAt).toLocaleDateString("en-GB", {
+                          day: "numeric",
+                          month: "short",
+                        })}
+                      </p>
+                    </div>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
       {/* How Pre-order works */}
       <section
         id="how-pre-order-works"
@@ -165,4 +236,17 @@ export default function HomeView({
       </section>
     </div>
   );
+}
+
+const DAY = 24 * 60 * 60 * 1000;
+
+/** Whole days until a window closes, never below 0. */
+function daysLeft(closesAt: number) {
+  return Math.max(0, Math.ceil((closesAt - Date.now()) / DAY));
+}
+
+/** "3 days left", "1 day left" or "last day". */
+function daysLeftLabel(closesAt: number) {
+  const days = daysLeft(closesAt);
+  return days === 0 ? "last day" : `${days} day${days === 1 ? "" : "s"} left`;
 }

@@ -2,16 +2,18 @@ import { v } from "convex/values";
 
 import { mutation, query } from "../_generated/server";
 import { requireStaff } from "../lib/guards";
+import { currentWindow } from "../model/windowLookups";
 import {
   archiveProduct,
   getProduct,
+  offeredForPreorder,
   inOptionOrder,
   listVariants,
   publishProduct,
   restoreProduct,
   saveProductDraft,
 } from "../model/products";
-import { productOption, productStatus } from "../schema";
+import { productOption, productStatus, windowStage } from "../schema";
 
 const variantFields = {
   optionValues: v.array(v.string()),
@@ -43,6 +45,15 @@ export const list = query({
       coverUrl: v.optional(v.string()),
       variantCount: v.number(),
       needsPrices: v.boolean(),
+      /** Its draft or open Order Window, which the opening wizard flags. */
+      window: v.optional(
+        v.object({
+          windowId: v.id("orderWindows"),
+          number: v.number(),
+          stage: windowStage,
+          closesAt: v.number(),
+        }),
+      ),
     }),
   ),
   handler: async (ctx) => {
@@ -53,6 +64,7 @@ export const list = query({
         const variants = await listVariants(ctx, product._id);
         const category = product.categoryId ? await ctx.db.get(product.categoryId) : null;
         const cover = product.gallery[0];
+        const window = await currentWindow(ctx, product._id);
         return {
           _id: product._id,
           name: product.name,
@@ -60,7 +72,17 @@ export const list = query({
           categoryName: category?.name,
           coverUrl: (cover && (await ctx.storage.getUrl(cover))) || undefined,
           variantCount: variants.length,
-          needsPrices: variants.some((variant) => variant.storePrice === undefined),
+          // Store Prices only matter on a Product sold In-stock.
+          needsPrices:
+            product.sellInStock && variants.some((variant) => variant.storePrice === undefined),
+          window: window
+            ? {
+                windowId: window._id,
+                number: window.number,
+                stage: window.stage,
+                closesAt: window.closesAt,
+              }
+            : undefined,
         };
       }),
     );
@@ -81,6 +103,8 @@ export const get = query({
     options: v.array(productOption),
     variants: v.array(v.object({ _id: v.id("variants"), ...variantFields })),
     sellInStock: v.boolean(),
+    /** Whether a window has ever opened on it, which makes a Pre-order-only Product publishable. */
+    offeredForPreorder: v.boolean(),
   }),
   handler: async (ctx, { productId }) => {
     await requireStaff(ctx);
@@ -110,6 +134,7 @@ export const get = query({
         }),
       ),
       sellInStock: product.sellInStock,
+      offeredForPreorder: await offeredForPreorder(ctx, productId),
     };
   },
 });

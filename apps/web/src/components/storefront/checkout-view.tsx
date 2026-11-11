@@ -72,8 +72,17 @@ export default function CheckoutView({
   const [address, setAddress] = useState<Address>(emptyAddress);
   const [busy, setBusy] = useState(false);
 
+  // Only In-stock lines can be paid for so far; Pre-order lines wait in the Bag.
+  const inStockBag = bag.lines.filter((line) => !line.windowId);
+  const preorderBag = bag.lines.filter((line) => line.windowId);
   const lines = useQuery(api.storefront.catalog.bagLines, {
-    variantIds: bag.lines.map((line) => line.variantId),
+    variantIds: inStockBag.map((line) => line.variantId),
+  });
+  const preorderLines = useQuery(api.storefront.catalog.preorderBagLines, {
+    lines: preorderBag.map((line) => ({
+      variantId: line.variantId,
+      windowId: line.windowId ?? "",
+    })),
   });
   const me = useQuery(api.storefront.customer.me, isAuthenticated ? {} : "skip");
   const pickupPoint = useQuery(api.storefront.catalog.pickupPoint);
@@ -117,7 +126,13 @@ export default function CheckoutView({
 
   const priced = (lines ?? []).map((line) => ({
     ...line,
-    quantity: bag.lines.find((l) => l.variantId === line.variantId)?.quantity ?? 0,
+    quantity: inStockBag.find((l) => l.variantId === line.variantId)?.quantity ?? 0,
+  }));
+  const pricedPreorders = (preorderLines ?? []).map((line) => ({
+    ...line,
+    quantity:
+      preorderBag.find((l) => l.variantId === line.variantId && l.windowId === line.windowId)
+        ?.quantity ?? 0,
   }));
   const bagTotal = priced.reduce((sum, line) => sum + line.storePrice * line.quantity, 0);
   const pending = checkout?.status === "pending" ? checkout : undefined;
@@ -222,7 +237,12 @@ export default function CheckoutView({
 
       <div className="flex-1 px-4 py-5">
         {step === "bag" && (
-          <BagStep lines={priced} loading={lines === undefined} onQuantity={bag.setQuantity} />
+          <BagStep
+            lines={priced}
+            preorders={pricedPreorders}
+            loading={lines === undefined || preorderLines === undefined}
+            onQuantity={bag.setQuantity}
+          />
         )}
         {step === "phone" &&
           (authLoading ? null : isAuthenticated ? (
@@ -332,7 +352,11 @@ export default function CheckoutView({
             disabled={priced.length === 0 || priced.some((l) => l.quantity > l.inStock)}
             onClick={() => goTo(isAuthenticated ? "pickup" : "phone")}
           >
-            {priced.length === 0 ? "Your bag is empty" : `Check out · ${cedi(bagTotal)}`}
+            {priced.length > 0
+              ? `Check out · ${cedi(bagTotal)}`
+              : pricedPreorders.length > 0
+                ? "Pre-order checkout opens soon"
+                : "Your bag is empty"}
           </Button>
         )}
         {step === "pickup" && (
@@ -394,17 +418,32 @@ type PricedLine = {
   quantity: number;
 };
 
+type PreorderLine = {
+  variantId: string;
+  windowId: string;
+  productName: string;
+  slug: string;
+  variantLabel: string;
+  preorderPrice: number;
+  left?: number;
+  closesAt: number;
+  imageUrl?: string;
+  quantity: number;
+};
+
 function BagStep({
   lines,
+  preorders,
   loading,
   onQuantity,
 }: {
   lines: PricedLine[];
+  preorders: PreorderLine[];
   loading: boolean;
-  onQuantity: (variantId: string, quantity: number) => void;
+  onQuantity: (variantId: string, quantity: number, windowId?: string) => void;
 }) {
   if (loading) return <p className="text-muted-foreground text-sm">Loading your bag…</p>;
-  if (lines.length === 0) {
+  if (lines.length === 0 && preorders.length === 0) {
     return (
       <div className="py-10 text-center">
         <p className="text-muted-foreground text-sm">Nothing in your bag yet.</p>
@@ -416,9 +455,92 @@ function BagStep({
   }
   return (
     <div className="space-y-5">
+      {preorders.length > 0 && <PreorderLines lines={preorders} onQuantity={onQuantity} />}
+      {lines.length > 0 && (
+        <>
+          <ul className="divide-y">
+            {lines.map((line) => (
+              <li key={line.variantId} className="flex gap-3 py-3">
+                <ProductPhoto
+                  url={line.imageUrl}
+                  alt=""
+                  sizes="64px"
+                  className="size-16 shrink-0 rounded-md"
+                />
+                <div className="min-w-0 flex-1">
+                  <Link href={`/products/${line.slug}`} className="font-medium text-sm">
+                    {line.productName}
+                  </Link>
+                  {line.variantLabel && (
+                    <p className="text-muted-foreground text-xs">{line.variantLabel}</p>
+                  )}
+                  <span className="mt-1 inline-block rounded bg-brand-purple-mist px-1.5 py-0.5 font-semibold text-[10px] text-brand-purple uppercase">
+                    In stock
+                  </span>
+                  {line.quantity > line.inStock && (
+                    <p className="mt-1 text-destructive text-xs">
+                      {line.inStock > 0
+                        ? `Only ${line.inStock} left. Lower the quantity.`
+                        : "Sold out. Remove it to continue."}
+                    </p>
+                  )}
+                  <div className="mt-2 flex items-center gap-3">
+                    <select
+                      aria-label={`Quantity of ${line.productName}`}
+                      value={line.quantity}
+                      onChange={(e) => onQuantity(line.variantId, Number(e.target.value))}
+                      className="h-8 rounded-md border bg-card px-2 text-sm"
+                    >
+                      {Array.from(
+                        { length: Math.max(line.quantity, line.inStock, 1) },
+                        (_, i) => i + 1,
+                      ).map((n) => (
+                        <option key={n} value={n}>
+                          {n}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="text-muted-foreground text-xs underline"
+                      onClick={() => onQuantity(line.variantId, 0)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+                <p className="font-semibold text-sm">{cedi(line.storePrice * line.quantity)}</p>
+              </li>
+            ))}
+          </ul>
+          <div className="rounded-lg bg-brand-purple-mist p-4 text-sm">
+            <p className="font-semibold">You pay once. We make it 1 order.</p>
+            <p className="mt-1 text-muted-foreground">
+              1. In-stock order: ready for pickup as soon as you pay.
+            </p>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The Bag's Pre-order lines. Each is capped at what's left in its window; they're paid for at
+ * a Pre-order Checkout, so the In-stock items check out on their own for now.
+ */
+function PreorderLines({
+  lines,
+  onQuantity,
+}: {
+  lines: PreorderLine[];
+  onQuantity: (variantId: string, quantity: number, windowId?: string) => void;
+}) {
+  return (
+    <section className="space-y-2">
       <ul className="divide-y">
         {lines.map((line) => (
-          <li key={line.variantId} className="flex gap-3 py-3">
+          <li key={`${line.windowId}:${line.variantId}`} className="flex gap-3 py-3">
             <ProductPhoto
               url={line.imageUrl}
               alt=""
@@ -432,25 +554,29 @@ function BagStep({
               {line.variantLabel && (
                 <p className="text-muted-foreground text-xs">{line.variantLabel}</p>
               )}
-              <span className="mt-1 inline-block rounded bg-brand-purple-mist px-1.5 py-0.5 font-semibold text-[10px] text-brand-purple uppercase">
-                In stock
+              <span className="mt-1 inline-block rounded bg-brand-gold-mist px-1.5 py-0.5 font-semibold text-[10px] text-brand-purple-deep uppercase">
+                Pre-order
               </span>
-              {line.quantity > line.inStock && (
+              {line.left !== undefined && line.quantity > line.left && (
                 <p className="mt-1 text-destructive text-xs">
-                  {line.inStock > 0
-                    ? `Only ${line.inStock} left. Lower the quantity.`
-                    : "Sold out. Remove it to continue."}
+                  {line.left > 0
+                    ? `Only ${line.left} left in this window. Lower the quantity.`
+                    : "Pre-order full for this option. Remove it."}
                 </p>
               )}
               <div className="mt-2 flex items-center gap-3">
                 <select
                   aria-label={`Quantity of ${line.productName}`}
                   value={line.quantity}
-                  onChange={(e) => onQuantity(line.variantId, Number(e.target.value))}
+                  onChange={(e) =>
+                    onQuantity(line.variantId, Number(e.target.value), line.windowId)
+                  }
                   className="h-8 rounded-md border bg-card px-2 text-sm"
                 >
                   {Array.from(
-                    { length: Math.max(line.quantity, line.inStock, 1) },
+                    {
+                      length: Math.max(line.quantity, Math.min(line.left ?? 20, 99), 1),
+                    },
                     (_, i) => i + 1,
                   ).map((n) => (
                     <option key={n} value={n}>
@@ -461,23 +587,21 @@ function BagStep({
                 <button
                   type="button"
                   className="text-muted-foreground text-xs underline"
-                  onClick={() => onQuantity(line.variantId, 0)}
+                  onClick={() => onQuantity(line.variantId, 0, line.windowId)}
                 >
                   Remove
                 </button>
               </div>
             </div>
-            <p className="font-semibold text-sm">{cedi(line.storePrice * line.quantity)}</p>
+            <p className="font-semibold text-sm">{cedi(line.preorderPrice * line.quantity)}</p>
           </li>
         ))}
       </ul>
-      <div className="rounded-lg bg-brand-purple-mist p-4 text-sm">
-        <p className="font-semibold">You pay once. We make it 1 order.</p>
-        <p className="mt-1 text-muted-foreground">
-          1. In-stock order: ready for pickup as soon as you pay.
-        </p>
-      </div>
-    </div>
+      <p className="rounded-lg bg-brand-gold-mist p-3 text-sm">
+        Your Pre-orders are saved in your Bag. Paying for Pre-orders online opens soon; In-stock
+        items below can be checked out now.
+      </p>
+    </section>
   );
 }
 

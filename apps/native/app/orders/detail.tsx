@@ -4,6 +4,7 @@ import type { DeliveryFailureReason } from "@emblish_workspace/backend/convex/mo
 import { brand } from "@emblish_workspace/brand/tokens";
 import { Ionicons } from "@expo/vector-icons";
 import { useMutation, useQuery } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
 import { router, useLocalSearchParams } from "expo-router";
 import { Button, Input, Spinner } from "heroui-native";
 import { type PropsWithChildren, useState } from "react";
@@ -21,6 +22,7 @@ import {
 import { ScreenHeader } from "@/components/screen-header";
 import { refusalMessage } from "@/lib/form-errors";
 import { formatGhs } from "@/lib/money";
+import { useStaffMember } from "@/lib/staff-member";
 
 const eventLabel = {
   paid: "Paid",
@@ -28,7 +30,13 @@ const eventLabel = {
   dispatched: "Dispatched",
   delivered: "Delivered",
   deliveryFailed: "Delivery failed",
+  unitsCancelled: "Units cancelled",
+  cancelled: "Order cancelled",
+  refundFlagged: "Refund flagged",
+  refunded: "Refunded",
 } as const;
+
+type Order = FunctionReturnType<typeof api.backOffice.orders.get>;
 
 // An order that's gone (or a bad link) shows the router's error screen with Retry.
 export { ErrorBoundary } from "expo-router";
@@ -114,11 +122,18 @@ export default function OrderDetailScreen() {
 
           <Section title="Items">
             {order.lines.map((line) => (
-              <View key={lineLabel(line)} className="flex-row justify-between py-1">
-                <Text className="flex-1 font-sans text-foreground">{lineLabel(line)}</Text>
-                <Text className="font-sans text-foreground">
-                  {formatGhs(line.quantity * line.unitPrice)}
-                </Text>
+              <View key={line.orderLineId} className="py-1">
+                <View className="flex-row justify-between">
+                  <Text className="flex-1 font-sans text-foreground">{lineLabel(line)}</Text>
+                  <Text className="font-sans text-foreground">
+                    {formatGhs(line.quantity * line.unitPrice)}
+                  </Text>
+                </View>
+                {line.refundedQuantity > 0 ? (
+                  <Text className="font-sans text-muted text-xs">
+                    {line.refundedQuantity} of {line.quantity} cancelled or refunded
+                  </Text>
+                ) : null}
               </View>
             ))}
             <View className="mt-2 flex-row justify-between border-border border-t pt-2">
@@ -148,6 +163,8 @@ export default function OrderDetailScreen() {
             ))}
           </Section>
 
+          <OrderActions order={order} />
+
           <Section title="History">
             {order.history.map((event) => (
               <View key={`${event.kind}-${event.at}`} className="flex-row gap-3 py-1.5">
@@ -159,6 +176,15 @@ export default function OrderDetailScreen() {
                   <Text className="font-sans text-muted text-xs">
                     {new Date(event.at).toLocaleString("en-GH")}
                   </Text>
+                  {event.amount !== undefined ? (
+                    <Text className="font-sans text-foreground text-sm">
+                      {event.units ? `${event.units} ${event.units === 1 ? "unit" : "units"} · ` : ""}
+                      {formatGhs(event.amount)}
+                      {event.note && !event.overrideReason && !event.failureReason
+                        ? ` (${event.note})`
+                        : ""}
+                    </Text>
+                  ) : null}
                   {event.riderName ? (
                     <Text className="font-sans text-foreground text-sm">
                       Rider: {event.riderName}
@@ -208,6 +234,242 @@ export default function OrderDetailScreen() {
         </StickyBar>
       ) : null}
     </View>
+  );
+}
+
+/**
+ * The rest of the order's actions: Staff cancel units until handover; after it, only an Owner
+ * refunds (Staff see it locked). Both flag a Refund for Refunds to make.
+ */
+function OrderActions({ order }: { order: Order }) {
+  const isOwner = useStaffMember()?.role === "owner";
+  const [open, setOpen] = useState(false);
+  if (order.canCancelUnits) {
+    return (
+      <Section title="Cancel units">
+        {open ? (
+          <RefundForm order={order} mode="cancel" onDone={() => setOpen(false)} />
+        ) : (
+          <Button variant="secondary" onPress={() => setOpen(true)}>
+            <Button.Label>Cancel units</Button.Label>
+          </Button>
+        )}
+      </Section>
+    );
+  }
+  if (order.canRefundAfterHandover) {
+    return (
+      <Section title="Refund">
+        {!isOwner ? (
+          <View className="flex-row items-center gap-2">
+            <Ionicons name="lock-closed" size={16} color={brand["ink-muted"]} />
+            <Text className="flex-1 font-sans text-muted text-sm">
+              Only an Owner can refund an order after handover.
+            </Text>
+          </View>
+        ) : open ? (
+          <RefundForm order={order} mode="afterHandover" onDone={() => setOpen(false)} />
+        ) : (
+          <Button variant="secondary" onPress={() => setOpen(true)}>
+            <Button.Label>Refund</Button.Label>
+          </Button>
+        )}
+      </Section>
+    );
+  }
+  return null;
+}
+
+/**
+ * Picks units per line (up to those still the Customer's), whether they go back to Stock and a
+ * note. Cancelling defaults to restocking; a refund after handover defaults to not, needs a
+ * reason, and can add the paid Delivery Fee.
+ */
+function RefundForm({
+  order,
+  mode,
+  onDone,
+}: {
+  order: Order;
+  mode: "cancel" | "afterHandover";
+  onDone: () => void;
+}) {
+  const cancelUnits = useMutation(api.backOffice.orders.cancelUnits);
+  const refundAfterHandover = useMutation(api.backOffice.orders.refundAfterHandover);
+  const [units, setUnits] = useState<Record<string, number>>({});
+  const [returnToStock, setReturnToStock] = useState(mode === "cancel");
+  const [deliveryFee, setDeliveryFee] = useState(false);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const lines = order.lines
+    .map((line) => ({ ...line, kept: line.quantity - line.refundedQuantity }))
+    .filter((line) => line.kept > 0);
+  const picked = lines
+    .map((line) => ({ orderLineId: line.orderLineId, quantity: units[line.orderLineId] ?? 0 }))
+    .filter((line) => line.quantity > 0);
+  // Cancelling every unit left cancels the order, and the server adds its paid Delivery Fee.
+  const cancelsOrder =
+    mode === "cancel" && lines.every((line) => (units[line.orderLineId] ?? 0) === line.kept);
+  const fee =
+    (mode === "afterHandover" && deliveryFee) || cancelsOrder ? order.refundableDeliveryFee : 0;
+  const amount =
+    lines.reduce((sum, line) => sum + (units[line.orderLineId] ?? 0) * line.unitPrice, 0) + fee;
+  const ready = amount > 0 && (mode === "cancel" || note.trim().length > 0);
+
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      if (mode === "cancel") {
+        await cancelUnits({
+          orderId: order.orderId,
+          lines: picked,
+          returnToStock,
+          note: note || undefined,
+        });
+      } else {
+        await refundAfterHandover({
+          orderId: order.orderId,
+          lines: picked,
+          deliveryFee,
+          returnToStock,
+          note,
+        });
+      }
+      onDone();
+    } catch (refused) {
+      setError(refusalMessage(refused));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const step = (orderLineId: string, by: number, max: number) =>
+    setUnits((current) => ({
+      ...current,
+      [orderLineId]: Math.min(max, Math.max(0, (current[orderLineId] ?? 0) + by)),
+    }));
+
+  return (
+    <View className="gap-3">
+      {lines.map((line) => {
+        const count = units[line.orderLineId] ?? 0;
+        return (
+          <View key={line.orderLineId} className="flex-row items-center gap-2">
+            <Text className="flex-1 font-sans text-foreground">{lineLabel(line)}</Text>
+            <Stepper
+              label={`${line.productName} ${line.variantLabel}`}
+              value={count}
+              onMinus={() => step(line.orderLineId, -1, line.kept)}
+              onPlus={() => step(line.orderLineId, 1, line.kept)}
+              max={line.kept}
+            />
+          </View>
+        );
+      })}
+      {mode === "afterHandover" && order.refundableDeliveryFee > 0 ? (
+        <Toggle
+          label={`Also refund the Delivery Fee (${formatGhs(order.refundableDeliveryFee)})`}
+          value={deliveryFee}
+          onChange={setDeliveryFee}
+        />
+      ) : null}
+      <Toggle
+        label={mode === "cancel" ? "Put the units back in Stock" : "Goods came back: add to Stock"}
+        value={returnToStock}
+        onChange={setReturnToStock}
+      />
+      <Input
+        value={note}
+        onChangeText={setNote}
+        placeholder={mode === "cancel" ? "Note (optional)" : "Reason for the refund"}
+        accessibilityLabel={mode === "cancel" ? "Note" : "Reason for the refund"}
+      />
+      <Text className="font-sans text-muted text-xs">
+        {formatGhs(amount)} goes on Refunds to make for an Owner to pay out.
+        {mode === "cancel" ? " Cancelling every unit cancels the order and its Delivery Fee." : ""}
+      </Text>
+      {error ? <Text className="font-sans-semibold text-danger text-sm">{error}</Text> : null}
+      <View className="flex-row gap-2">
+        <Button variant="secondary" className="flex-1" onPress={onDone} isDisabled={busy}>
+          <Button.Label>Back</Button.Label>
+        </Button>
+        <Button
+          variant="danger"
+          className="flex-1"
+          onPress={submit}
+          isDisabled={busy || !ready}
+        >
+          <Button.Label>{mode === "cancel" ? "Cancel units" : "Flag refund"}</Button.Label>
+        </Button>
+      </View>
+    </View>
+  );
+}
+
+function Stepper({
+  label,
+  value,
+  max,
+  onMinus,
+  onPlus,
+}: {
+  label: string;
+  value: number;
+  max: number;
+  onMinus: () => void;
+  onPlus: () => void;
+}) {
+  return (
+    <View className="flex-row items-center gap-1">
+      <Pressable
+        onPress={onMinus}
+        disabled={value === 0}
+        accessibilityRole="button"
+        accessibilityLabel={`One fewer ${label}`}
+        className="size-11 items-center justify-center rounded-full border border-border"
+      >
+        <Ionicons name="remove" size={18} color={brand.purple} />
+      </Pressable>
+      <Text className="w-8 text-center font-sans-semibold text-foreground">{value}</Text>
+      <Pressable
+        onPress={onPlus}
+        disabled={value >= max}
+        accessibilityRole="button"
+        accessibilityLabel={`One more ${label}`}
+        className="size-11 items-center justify-center rounded-full border border-border"
+      >
+        <Ionicons name="add" size={18} color={brand.purple} />
+      </Pressable>
+    </View>
+  );
+}
+
+function Toggle({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <Pressable
+      onPress={() => onChange(!value)}
+      accessibilityRole="checkbox"
+      aria-checked={value}
+      className="min-h-11 flex-row items-center gap-2"
+    >
+      <Ionicons
+        name={value ? "checkbox" : "square-outline"}
+        size={22}
+        color={value ? brand.purple : brand["ink-muted"]}
+      />
+      <Text className="flex-1 font-sans text-foreground">{label}</Text>
+    </Pressable>
   );
 }
 

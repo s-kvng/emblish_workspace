@@ -29,8 +29,11 @@ const card = v.object({
     v.object({
       productName: v.string(),
       variantLabel: v.string(),
+      /** Units paid for. */
       quantity: v.number(),
       unitPrice: v.number(),
+      /** Of those, units cancelled or refunded. */
+      refundedQuantity: v.number(),
       /** The Variant's photo, else the Product's cover; missing when it has none. */
       imageUrl: v.optional(v.string()),
     }),

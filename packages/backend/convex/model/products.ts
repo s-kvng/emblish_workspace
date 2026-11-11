@@ -11,8 +11,9 @@ import {
   slugFor,
   variantCombinations,
 } from "./catalog";
-import { buyableNow } from "./shelf";
+import { buyableNow, type ShelfVariant } from "./shelf";
 import { hasStockHistory, stockCounts } from "./stock";
+import { listWindowVariants, unitsLeft, windowInStage } from "./windowLookups";
 
 /** The wizard's whole Product, saved in one go at its Review step. */
 export type ProductDraft = {
@@ -275,7 +276,12 @@ export async function saveProductDraft(
       kept.add(variant.variantId);
       await ctx.db.patch(variant.variantId, stored);
     } else {
-      await ctx.db.insert("variants", { productId, ...stored, stockOnHand: 0, stockHeld: 0 });
+      await ctx.db.insert("variants", {
+        productId,
+        ...stored,
+        stockOnHand: 0,
+        stockHeld: 0,
+      });
     }
   }
   // A Variant with Stock history stays, so its ledger keeps resolving; until Variants can be
@@ -293,21 +299,43 @@ export async function saveProductDraft(
   return productId;
 }
 
+/** Whether the Product has an open Order Window, so it's a Pre-order Product. */
+export async function hasOpenWindow(ctx: Pick<QueryCtx, "db">, productId: Id<"products">) {
+  return (await windowInStage(ctx, productId, "open")) !== null;
+}
+
+/** The Product's open window and its offered Variants, or null when it isn't on Pre-order. */
+export async function openWindowFor(ctx: Pick<QueryCtx, "db">, productId: Id<"products">) {
+  const window = await windowInStage(ctx, productId, "open");
+  return window && { window, rows: await listWindowVariants(ctx, window._id) };
+}
+
+/** Whether an Order Window has ever opened on the Product (a draft that never opened doesn't count). */
+export async function offeredForPreorder(ctx: Pick<QueryCtx, "db">, productId: Id<"products">) {
+  for await (const window of ctx.db
+    .query("orderWindows")
+    .withIndex("by_product_and_stage", (q) => q.eq("productId", productId))) {
+    if (window.stage !== "draft") return true;
+  }
+  return false;
+}
+
 /** The "Ready to publish?" checklist for a saved Product. */
-export function savedProductChecklist(product: Doc<"products">, variants: Doc<"variants">[]) {
+export async function savedProductChecklist(ctx: Pick<QueryCtx, "db">, product: Doc<"products">) {
   return publishChecklist({
     name: product.name,
     categoryId: product.categoryId,
     photoCount: product.gallery.length,
     sellInStock: product.sellInStock,
-    variants,
+    offeredForPreorder: await offeredForPreorder(ctx, product._id),
+    variants: await listVariants(ctx, product._id),
   });
 }
 
 /** Publishes a saved Product, refusing with what's missing while the checklist isn't clear. */
 export async function publishProduct(ctx: Pick<MutationCtx, "db">, productId: Id<"products">) {
   const product = await getProduct(ctx, productId);
-  const missing = savedProductChecklist(product, await listVariants(ctx, productId))
+  const missing = (await savedProductChecklist(ctx, product))
     .filter((check) => !check.ok)
     .map((check) => check.label);
   if (missing.length > 0) {
@@ -353,17 +381,28 @@ export async function listStorefrontProducts(
 
 /**
  * A Product's Variants as Customers see them, in option order: a Store Price only while the
- * Product is sold In-stock, and the Stock they can buy now, never below zero.
+ * Product is sold In-stock, the Stock they can buy now (never below zero), and the open
+ * window's Pre-order price and units left for the Variants it offers.
  */
 export async function shelfVariants(ctx: Pick<QueryCtx, "db">, product: Doc<"products">) {
   const variants = inOptionOrder(product.options, await listVariants(ctx, product._id));
-  return variants.map((variant) => ({
-    _id: variant._id,
-    optionValues: variant.optionValues,
-    storePrice: product.sellInStock ? variant.storePrice : undefined,
-    inStock: Math.max(0, stockCounts(variant).available),
-    imageId: variant.imageId,
-  }));
+  const rows = (await openWindowFor(ctx, product._id))?.rows ?? [];
+  return variants.map((variant) => {
+    const row = rows.find((r) => r.variantId === variant._id);
+    const left = row && unitsLeft(row);
+    const preorder: ShelfVariant["preorder"] =
+      row?.preorderPrice === undefined
+        ? undefined
+        : { price: row.preorderPrice, ...(left === undefined ? {} : { left }) };
+    return {
+      _id: variant._id,
+      optionValues: variant.optionValues,
+      storePrice: product.sellInStock ? variant.storePrice : undefined,
+      inStock: Math.max(0, stockCounts(variant).available),
+      imageId: variant.imageId,
+      ...(preorder ? { preorder } : {}),
+    };
+  });
 }
 
 /** A Product's card on the Storefront's grids, or null if it has no Store Price to show. */
@@ -383,7 +422,39 @@ export async function shelfCard(ctx: Pick<QueryCtx, "db" | "storage">, product: 
     coverUrl: (cover && (await ctx.storage.getUrl(cover))) || undefined,
     fromPrice: Math.min(...prices),
     soldOut: buyable.length === 0,
+    alsoPreorder: await hasOpenWindow(ctx, product._id),
   };
+}
+
+/**
+ * Home's "Closing soon" rail: every open window on a Published Product, soonest close first,
+ * from its lowest Pre-order price; `full` once every offered Variant is capped out.
+ */
+export async function closingSoonCards(ctx: Pick<QueryCtx, "db" | "storage">) {
+  const windows = await ctx.db
+    .query("orderWindows")
+    .withIndex("by_stage_and_closesAt", (q) => q.eq("stage", "open"))
+    .collect();
+  const cards = [];
+  for (const window of windows) {
+    const product = await ctx.db.get(window.productId);
+    if (product?.status !== "published") continue;
+    const rows = await listWindowVariants(ctx, window._id);
+    const prices = rows.flatMap((row) =>
+      row.preorderPrice === undefined ? [] : [row.preorderPrice],
+    );
+    if (prices.length === 0) continue;
+    const cover = product.gallery[0];
+    cards.push({
+      slug: product.slug,
+      name: product.name,
+      coverUrl: (cover && (await ctx.storage.getUrl(cover))) || undefined,
+      fromPrice: Math.min(...prices),
+      closesAt: window.closesAt,
+      full: rows.every((row) => unitsLeft(row) === 0),
+    });
+  }
+  return cards;
 }
 
 /** The In-stock grid: Published Products sold In-stock, ones with Stock before sold-out ones. */

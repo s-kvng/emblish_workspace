@@ -62,6 +62,7 @@ export async function settlePayment(
       kind: "discretionary",
       amount,
       status: "toRefund",
+      returnToStock: false,
       note: unmatched,
     });
     await queueSms(ctx, customer.phone, "paymentUnmatched", { amount, receiptUrl: url });
@@ -95,6 +96,7 @@ export async function settlePayment(
       kind: "latePaid",
       amount: toRefund,
       status: "toRefund",
+      returnToStock: false,
     });
   }
   await ctx.db.patch(checkout._id, { status: "paid" });

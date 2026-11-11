@@ -24,6 +24,11 @@ export type PublishCandidate = {
   categoryId?: string;
   photoCount: number;
   sellInStock: boolean;
+  /**
+   * Whether an Order Window has ever opened on it: opening its first window publishes a
+   * Pre-order-only Product, and it stays publishable once that window closes.
+   */
+  offeredForPreorder: boolean;
   /** The Product's live Variants, not archived ones. */
   variants: { sku?: string; storePrice?: number }[];
 };
@@ -52,8 +57,8 @@ export function publishChecklist(product: PublishCandidate): PublishCheck[] {
     // A Pre-order-only Product is published by opening its first Order Window instead.
     {
       key: "sellInStock",
-      label: "Sold In-stock on the Storefront",
-      ok: product.sellInStock,
+      label: "Sold In-stock, or offered in an Order Window",
+      ok: product.sellInStock || product.offeredForPreorder,
     },
   ];
   if (product.sellInStock) {

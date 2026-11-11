@@ -32,6 +32,8 @@ export type ProductDraft = {
   options: ProductOption[];
   variants: DraftVariant[];
   sellInStock: boolean;
+  /** An Order Window has opened on it, which lets a Pre-order-only Product stay Published. */
+  offeredForPreorder: boolean;
 };
 
 /** A change to the draft: fields to replace, or a function of the latest draft giving them. */
@@ -47,6 +49,7 @@ export const emptyDraft: ProductDraft = {
   options: [],
   variants: [{ optionValues: [], sku: "" }],
   sellInStock: true,
+  offeredForPreorder: false,
 };
 
 export function draftFromSaved(saved: SavedProduct): ProductDraft {
@@ -64,6 +67,7 @@ export function draftFromSaved(saved: SavedProduct): ProductDraft {
       sku: sku ?? "",
     })),
     sellInStock: saved.sellInStock,
+    offeredForPreorder: saved.offeredForPreorder,
   };
 }
 
@@ -95,6 +99,7 @@ export function publishCandidate(draft: ProductDraft): PublishCandidate {
     categoryId: draft.categoryId,
     photoCount: draft.gallery.length,
     sellInStock: draft.sellInStock,
+    offeredForPreorder: draft.offeredForPreorder,
     variants: draft.variants,
   };
 }
