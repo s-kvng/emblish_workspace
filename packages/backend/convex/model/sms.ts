@@ -13,6 +13,52 @@ export function preordersPlaced(references: string[]) {
   return `Pre-order${references.length === 1 ? "" : "s"} ${named}${more} placed.`;
 }
 
+/** "P-1042", "P-1042 and P-1043", or "P-1042, P-1043 and 2 more". */
+export function orderReferences(references: string[]) {
+  if (references.length <= 2) return references.join(" and ");
+  return `${references.slice(0, 2).join(", ")} and ${references.length - 2} more`;
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** An expected arrival range in Ghana time (GMT): "2 to 9 Dec", "28 Nov to 5 Dec" or "9 Dec". */
+export function expectedRange(from: number, to: number) {
+  const a = new Date(from);
+  const b = new Date(to);
+  const day = (d: Date) => `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
+  if (a.getUTCFullYear() === b.getUTCFullYear() && a.getUTCMonth() === b.getUTCMonth()) {
+    return a.getUTCDate() === b.getUTCDate() ? day(b) : `${a.getUTCDate()} to ${day(b)}`;
+  }
+  return `${day(a)} to ${day(b)}`;
+}
+
+/**
+ * Text Staff typed, such as a Product name, made safe to put in an SMS: characters outside
+ * GSM-7 are dropped and it's cut to `max`, so it can't break the template's segment budget.
+ */
+export function smsSafe(text: string, max: number) {
+  let safe = "";
+  for (const char of text.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, "-")) {
+    if (basic.has(char) && char !== "\n" && char !== "\r") safe += char;
+  }
+  safe = safe.replace(/\s+/g, " ").trim();
+  return safe.length <= max ? safe : `${safe.slice(0, max - 3).trimEnd()}...`;
+}
+
+/** The tracking link in stage SMS: My orders, behind sign-in. */
+export function ordersUrl() {
+  return `${process.env.SITE_URL}/orders`;
+}
+
+/** What the Order Window stage SMS say about one Customer's Pre-orders in the window. */
+type StageSmsArgs = {
+  references: string[];
+  productName: string;
+  /** From `expectedRange`; left out when Staff gave no dates. */
+  expected?: string;
+  ordersUrl: string;
+};
+
 /**
  * Every SMS a Customer gets is rendered from one of these templates. They follow the
  * notification style rules: English, GSM-7 only (money as "GHS", never "₵"; no emoji,
@@ -128,6 +174,32 @@ export const smsTemplates = {
       references: ["P-1042", "P-1043", "P-1044"],
       receiptUrl: "https://emblish.com/r/7KQ2MX9P",
       refund: 12000,
+    },
+  }),
+  // Order Window stage "Ordered from supplier", to every Customer holding a Pre-order in it.
+  stageOrdered: template<StageSmsArgs>({
+    render: ({ references, productName, expected, ordersUrl }) =>
+      `${orderReferences(references)} (${smsSafe(productName, 24)}): ordered from our supplier.` +
+      (expected ? ` Expected in Ghana ${expected}.` : "") +
+      ` ${ordersUrl}`,
+    example: {
+      references: ["P-1042", "P-1043", "P-1044"],
+      productName: "Ankara Wrap Dress with a Very Long Name Indeed",
+      expected: "28 Nov to 5 Dec",
+      ordersUrl: "https://emblish.com/orders",
+    },
+  }),
+  // Order Window stage "In transit".
+  stageInTransit: template<StageSmsArgs>({
+    render: ({ references, productName, expected, ordersUrl }) =>
+      `${orderReferences(references)} (${smsSafe(productName, 24)}) is on its way to Ghana.` +
+      (expected ? ` Expected ${expected}.` : "") +
+      ` ${ordersUrl}`,
+    example: {
+      references: ["P-1042", "P-1043", "P-1044"],
+      productName: "Ankara Wrap Dress with a Very Long Name Indeed",
+      expected: "28 Nov to 5 Dec",
+      ordersUrl: "https://emblish.com/orders",
     },
   }),
   // A late charge Stock couldn't fill at all: nothing to pick up, all of it refunded.

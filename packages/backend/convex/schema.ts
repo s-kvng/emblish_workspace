@@ -32,6 +32,8 @@ export const windowStage = v.union(
   v.literal("inTransit"),
   v.literal("arrived"),
 );
+/** The stages Staff mark by hand ("Mark as <next>"); Closed is Close now, Arrived the arrival. */
+export const markableStage = v.union(v.literal("orderedFromSupplier"), v.literal("inTransit"));
 /** Every way Stock changes; see GLOSSARY.md, Stock Movement. */
 export const stockMovementKind = v.union(
   v.literal("arrival"),
@@ -67,6 +69,8 @@ export const smsTemplate = v.union(
   v.literal("paymentConfirmedPreorder"),
   v.literal("paymentNotFilled"),
   v.literal("paymentUnmatched"),
+  v.literal("stageOrdered"),
+  v.literal("stageInTransit"),
 );
 /** A Checkout's life: `pending` while it awaits payment, then paid, or expired / released unpaid. */
 export const checkoutStatus = v.union(
@@ -335,6 +339,11 @@ export default defineSchema({
     preordered: v.number(),
     /** Cached units under active window-cap holds. */
     held: v.number(),
+    /**
+     * Extra units for Stock added to the supplier order, set when it's marked "Ordered from
+     * supplier"; missing reads as 0.
+     */
+    storeQuantity: v.optional(v.number()),
   })
     .index("by_window", ["orderWindowId"])
     .index("by_variant", ["variantId"]),
@@ -345,6 +354,13 @@ export default defineSchema({
     stage: windowStage,
     /** Missing when the system did it, such as the auto-close. */
     staffId: v.optional(v.id("staff")),
+    /** The expected arrival range Staff gave with it, as times on its first and last days. */
+    expectedFrom: v.optional(v.number()),
+    expectedTo: v.optional(v.number()),
+    /** Staff's note to Customers. */
+    note: v.optional(v.string()),
+    /** How many Customers were texted about it; missing when no one was. */
+    texted: v.optional(v.number()),
   }).index("by_window", ["orderWindowId"]),
 
   // Append-only: Stock is the sum of a Variant's rows, never edited directly.
@@ -445,6 +461,7 @@ export default defineSchema({
   })
     .index("by_reference", ["reference"])
     .index("by_customer", ["customerId"])
+    .index("by_orderWindow", ["orderWindowId"])
     .index("by_payment", ["paymentId"])
     .index("by_status", ["status"])
     .index("by_pickupCode_and_status", ["pickupCode", "status"]),

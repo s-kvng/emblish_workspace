@@ -3,15 +3,17 @@ import { v } from "convex/values";
 import { mutation, query } from "../_generated/server";
 import { requireStaff } from "../lib/guards";
 import {
+  advanceWindow,
   closeWindow,
   discardDraft,
   extendWindow,
   getWindow,
   saveWindow,
+  describeStageSheet,
 } from "../model/orderWindows";
 import { getProduct, inOptionOrder, listVariants } from "../model/products";
 import { currentWindow, listWindowVariants } from "../model/windowLookups";
-import { windowStage } from "../schema";
+import { markableStage, windowStage } from "../schema";
 
 const windowRow = {
   variantId: v.id("variants"),
@@ -70,6 +72,53 @@ export const closeNow = mutation({
   },
 });
 
+/**
+ * "Mark as <next stage>": Closed → Ordered from supplier → In transit, in order only, with the
+ * expected arrival dates and a note to Customers.
+ */
+export const advance = mutation({
+  args: {
+    windowId: v.id("orderWindows"),
+    stage: markableStage,
+    expectedFrom: v.optional(v.number()),
+    expectedTo: v.optional(v.number()),
+    note: v.optional(v.string()),
+    /** At "Ordered from supplier": extra units for Stock per offered Variant. */
+    storeQuantities: v.optional(
+      v.array(v.object({ variantId: v.id("variants"), quantity: v.number() })),
+    ),
+  },
+  returns: v.object({ texted: v.number() }),
+  handler: async (ctx, { windowId, ...update }) => {
+    const actor = await requireStaff(ctx);
+    return await advanceWindow(ctx, actor, windowId, update);
+  },
+});
+
+/**
+ * The "Mark as <next>" sheet: the stage it marks (null when none can be marked by hand), the
+ * Customers "Text N Customers" will text, and a preview of their SMS with these dates.
+ */
+export const stageSheet = query({
+  args: {
+    windowId: v.id("orderWindows"),
+    expectedFrom: v.optional(v.number()),
+    expectedTo: v.optional(v.number()),
+  },
+  returns: v.union(
+    v.object({
+      next: markableStage,
+      customers: v.number(),
+      preview: v.string(),
+    }),
+    v.object({ next: v.null(), customers: v.number(), preview: v.null() }),
+  ),
+  handler: async (ctx, { windowId, ...dates }) => {
+    await requireStaff(ctx);
+    return await describeStageSheet(ctx, windowId, dates);
+  },
+});
+
 /** Throws away a draft window that never opened. */
 export const discard = mutation({
   args: { windowId: v.id("orderWindows") },
@@ -99,6 +148,8 @@ export const get = query({
         label: v.string(),
         preordered: v.number(),
         held: v.number(),
+        /** Extra units for Stock on the supplier order; 0 until set. */
+        storeQuantity: v.number(),
       }),
     ),
     events: v.array(
@@ -106,6 +157,11 @@ export const get = query({
         stage: windowStage,
         at: v.number(),
         staffName: v.optional(v.string()),
+        expectedFrom: v.optional(v.number()),
+        expectedTo: v.optional(v.number()),
+        note: v.optional(v.string()),
+        /** Customers texted about it; missing when no one was. */
+        texted: v.optional(v.number()),
       }),
     ),
   }),
@@ -140,6 +196,7 @@ export const get = query({
                 cap: row.cap,
                 preordered: row.preordered,
                 held: row.held,
+                storeQuantity: row.storeQuantity ?? 0,
               },
             ]
           : [];
@@ -149,6 +206,10 @@ export const get = query({
           stage: event.stage,
           at: event._creationTime,
           staffName: event.staffId ? (await ctx.db.get(event.staffId))?.name : undefined,
+          expectedFrom: event.expectedFrom,
+          expectedTo: event.expectedTo,
+          note: event.note,
+          texted: event.texted,
         })),
       ),
     };

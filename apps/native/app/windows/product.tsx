@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ScreenHeader } from "@/components/screen-header";
 import {
   daysUntil,
+  expectedLabel,
   shortDate,
   stageLabel,
   timelineStages,
@@ -209,21 +210,71 @@ function Timeline({ window }: { window: OrderWindow }) {
               >
                 {stageLabel[stage]}
               </Text>
-              {event ? (
-                <Text className="font-sans text-muted text-xs">
-                  {shortDate(event.at)} · {event.staffName ?? "Automatically"}
-                </Text>
-              ) : null}
+              {event ? <EventDetail event={event} /> : null}
               {state === "current" && stage === "open" ? <OpenControls window={window} /> : null}
-              {state === "next" && index === current + 1 && stage !== "closed" ? (
+              {state !== "next" && stage === "orderedFromSupplier" ? (
+                <StoreQuantities window={window} />
+              ) : null}
+              {state === "next" && index === current + 1 && isMarkable(stage) ? (
+                <View className="mt-2 gap-2 rounded-2xl border border-border border-dashed p-3">
+                  <Button
+                    variant="secondary"
+                    onPress={() =>
+                      router.push({
+                        pathname: "/windows/stage",
+                        params: { windowId: window._id },
+                      })
+                    }
+                  >
+                    <Button.Label>Mark as {stageLabel[stage].toLowerCase()}</Button.Label>
+                  </Button>
+                </View>
+              ) : null}
+              {state === "next" && index === current + 1 && stage === "arrived" ? (
                 <Text className="mt-1 font-sans text-muted text-xs">
-                  Next: mark it {stageLabel[stage as WindowStage].toLowerCase()} once it happens.
+                  Arrived is set when the arrival is recorded.
                 </Text>
               ) : null}
             </View>
           </View>
         );
       })}
+    </View>
+  );
+}
+
+/** The stages Staff mark from the timeline; Closed comes from Close now, Arrived from the arrival. */
+function isMarkable(stage: WindowStage): stage is "orderedFromSupplier" | "inTransit" {
+  return stage === "orderedFromSupplier" || stage === "inTransit";
+}
+
+/** A stage's date and who did it, then its expected range, note and how many were texted. */
+function EventDetail({ event }: { event: OrderWindow["events"][number] }) {
+  const expected = expectedLabel(event);
+  return (
+    <View className="gap-0.5">
+      <Text className="font-sans text-muted text-xs">
+        {shortDate(event.at)} · {event.staffName ?? "Automatically"}
+        {event.texted ? ` · texted ${event.texted}` : ""}
+      </Text>
+      {expected ? <Text className="font-sans text-foreground text-sm">{expected}</Text> : null}
+      {event.note ? (
+        <Text className="font-sans text-foreground text-sm italic">"{event.note}"</Text>
+      ) : null}
+    </View>
+  );
+}
+
+/** What was added to the supplier order for Stock, per Variant. */
+function StoreQuantities({ window }: { window: OrderWindow }) {
+  return (
+    <View className="mt-2 gap-1 rounded-2xl border border-border bg-surface p-3">
+      <Text className="font-sans-semibold text-foreground text-sm">On the supplier order</Text>
+      {window.variants.map((row) => (
+        <Text key={row.variantId} className="font-sans text-muted text-xs">
+          {row.label || "Standard"}: {row.preordered} pre-ordered + {row.storeQuantity} for Stock
+        </Text>
+      ))}
     </View>
   );
 }

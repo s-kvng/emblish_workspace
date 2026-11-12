@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { isGsm7, segmentCount, smsTemplates } from "./sms";
+import { expectedRange, isGsm7, segmentCount, smsSafe, smsTemplates } from "./sms";
 
 describe("SMS template registry", () => {
   test.each(Object.entries(smsTemplates))(
@@ -53,5 +53,18 @@ describe("segments", () => {
   test("extension characters such as the euro sign take two places", () => {
     expect(segmentCount("€".repeat(80))).toBe(1);
     expect(segmentCount("€".repeat(81))).toBe(2);
+  });
+});
+
+describe("stage SMS pieces", () => {
+  test("expected ranges read like the notification copy, in Ghana time", () => {
+    expect(expectedRange(Date.UTC(2026, 11, 2, 12), Date.UTC(2026, 11, 9, 12))).toBe("2 to 9 Dec");
+    expect(expectedRange(Date.UTC(2026, 10, 28), Date.UTC(2026, 11, 5))).toBe("28 Nov to 5 Dec");
+    expect(expectedRange(Date.UTC(2026, 11, 9, 1), Date.UTC(2026, 11, 9, 23))).toBe("9 Dec");
+  });
+
+  test("a Product name is made GSM-7 safe and short", () => {
+    expect(smsSafe("Ama’s “Kente” Tote – ₵ 🌟 edition", 40)).toBe(`Ama's "Kente" Tote - edition`);
+    expect(smsSafe("A".repeat(50), 40)).toBe(`${"A".repeat(37)}...`);
   });
 });

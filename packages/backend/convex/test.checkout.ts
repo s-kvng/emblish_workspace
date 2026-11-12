@@ -262,3 +262,61 @@ export async function windowRow(
     return { preordered: row.preordered, held: row.held };
   });
 }
+
+/**
+ * A Pre-order paid on time through the real settlement path, for uncapped lines in one window,
+ * at the window's Pre-order prices. Returns its `P-` reference.
+ */
+export async function paidPreorder(
+  t: TestBackend,
+  customerId: Id<"customers">,
+  orderWindowId: Id<"orderWindows">,
+  lines: { variantId: Id<"variants">; quantity: number }[],
+) {
+  return await t.run(async (ctx) => {
+    const priced = [];
+    for (const { variantId, quantity } of lines) {
+      const variant = await ctx.db.get(variantId);
+      const product = variant && (await ctx.db.get(variant.productId));
+      const row = (
+        await ctx.db
+          .query("windowVariants")
+          .withIndex("by_window", (q) => q.eq("orderWindowId", orderWindowId))
+          .collect()
+      ).find((r) => r.variantId === variantId);
+      if (!variant || !product || row?.preorderPrice === undefined) throw new Error("Not offered");
+      priced.push({
+        variantId,
+        orderWindowId,
+        productName: product.name,
+        variantLabel: variant.optionValues.join(" / "),
+        quantity,
+        unitPrice: row.preorderPrice,
+      });
+    }
+    const total = priced.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0);
+    const checkoutId = await ctx.db.insert("checkouts", {
+      customerId,
+      lines: priced,
+      fulfilment: { method: "pickup" },
+      total,
+      status: "pending",
+      expiresAt: Date.now() + 30 * 60 * 1000,
+    });
+    const reference = `PAY-${checkoutId}`;
+    await ctx.db.insert("paymentSessions", {
+      checkoutId,
+      reference,
+      checkoutUrl: `https://pay.seevplus.com/${reference}`,
+      expiresAt: Date.now() + 30 * 60 * 1000,
+    });
+    await settlePayment(ctx, { reference, amount: total });
+    const order = await ctx.db
+      .query("orders")
+      .withIndex("by_customer", (q) => q.eq("customerId", customerId))
+      .order("desc")
+      .first();
+    if (!order) throw new Error("No Pre-order was created");
+    return order.reference;
+  });
+}
