@@ -71,6 +71,7 @@ export const smsTemplate = v.union(
   v.literal("paymentUnmatched"),
   v.literal("stageOrdered"),
   v.literal("stageInTransit"),
+  v.literal("stageNewDates"),
 );
 /** A Checkout's life: `pending` while it awaits payment, then paid, or expired / released unpaid. */
 export const checkoutStatus = v.union(
@@ -361,6 +362,12 @@ export default defineSchema({
     note: v.optional(v.string()),
     /** How many Customers were texted about it; missing when no one was. */
     texted: v.optional(v.number()),
+    /**
+     * When Staff last changed the expected dates or note ("Change expected dates or note"), and
+     * who. The fields above always hold the latest values.
+     */
+    changedAt: v.optional(v.number()),
+    changedBy: v.optional(v.id("staff")),
   }).index("by_window", ["orderWindowId"]),
 
   // Append-only: Stock is the sum of a Variant's rows, never edited directly.

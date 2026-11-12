@@ -202,6 +202,18 @@ export const smsTemplates = {
       ordersUrl: "https://emblish.com/orders",
     },
   }),
+  // Staff changed the current stage's expected dates; a note-only change sends nothing.
+  stageNewDates: template<StageSmsArgs & { expected: string }>({
+    render: ({ references, productName, expected, ordersUrl }) =>
+      `${orderReferences(references)} (${smsSafe(productName, 24)}): new expected arrival ` +
+      `${expected}. Sorry for the wait. ${ordersUrl}`,
+    example: {
+      references: ["P-1042", "P-1043", "P-1044"],
+      productName: "Ankara Wrap Dress with a Very Long Name Indeed",
+      expected: "28 Nov to 5 Dec",
+      ordersUrl: "https://emblish.com/orders",
+    },
+  }),
   // A late charge Stock couldn't fill at all: nothing to pick up, all of it refunded.
   paymentNotFilled: template({
     render: ({ amount, receiptUrl }: { amount: number; receiptUrl: string }) =>

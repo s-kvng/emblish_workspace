@@ -4,7 +4,9 @@ import { mutation, query } from "../_generated/server";
 import { requireStaff } from "../lib/guards";
 import {
   advanceWindow,
+  changeWindowStage,
   closeWindow,
+  describeChangeSheet,
   discardDraft,
   extendWindow,
   getWindow,
@@ -28,6 +30,11 @@ const terms = {
   /** Integer pesewas per unit. */
   shippingFeeEstimate: v.optional(v.number()),
 };
+
+/** Extra units for Stock per offered Variant, on the supplier order. */
+const storeQuantities = v.optional(
+  v.array(v.object({ variantId: v.id("variants"), quantity: v.number() })),
+);
 
 /** The opening wizard's Review step: saves a draft, or opens the window. */
 export const save = mutation({
@@ -84,9 +91,7 @@ export const advance = mutation({
     expectedTo: v.optional(v.number()),
     note: v.optional(v.string()),
     /** At "Ordered from supplier": extra units for Stock per offered Variant. */
-    storeQuantities: v.optional(
-      v.array(v.object({ variantId: v.id("variants"), quantity: v.number() })),
-    ),
+    storeQuantities,
   },
   returns: v.object({ texted: v.number() }),
   handler: async (ctx, { windowId, ...update }) => {
@@ -116,6 +121,51 @@ export const stageSheet = query({
   handler: async (ctx, { windowId, ...dates }) => {
     await requireStaff(ctx);
     return await describeStageSheet(ctx, windowId, dates);
+  },
+});
+
+/**
+ * "Change expected dates or note" on the current stage, from Ordered from supplier until
+ * arrival. The dates and note replace the stage's (leave them out to clear them), as the sheet
+ * shows them; any Store Quantities given are saved too. New dates text every Pre-order holder;
+ * a change to the note alone, or to Store Quantity, texts no one.
+ */
+export const change = mutation({
+  args: {
+    windowId: v.id("orderWindows"),
+    expectedFrom: v.optional(v.number()),
+    expectedTo: v.optional(v.number()),
+    note: v.optional(v.string()),
+    storeQuantities,
+  },
+  returns: v.object({ texted: v.number() }),
+  handler: async (ctx, { windowId, ...change }) => {
+    const actor = await requireStaff(ctx);
+    return await changeWindowStage(ctx, actor, windowId, change);
+  },
+});
+
+/**
+ * The "Change expected dates or note" sheet: the stage it changes, the Customers new dates
+ * would text, and their SMS with these dates (or the current ones). Null once it can't change.
+ */
+export const changeSheet = query({
+  args: {
+    windowId: v.id("orderWindows"),
+    expectedFrom: v.optional(v.number()),
+    expectedTo: v.optional(v.number()),
+  },
+  returns: v.union(
+    v.null(),
+    v.object({
+      stage: markableStage,
+      customers: v.number(),
+      preview: v.union(v.string(), v.null()),
+    }),
+  ),
+  handler: async (ctx, { windowId, ...dates }) => {
+    await requireStaff(ctx);
+    return await describeChangeSheet(ctx, windowId, dates);
   },
 });
 
@@ -162,6 +212,9 @@ export const get = query({
         note: v.optional(v.string()),
         /** Customers texted about it; missing when no one was. */
         texted: v.optional(v.number()),
+        /** When the expected dates or note were last changed, and by whom. */
+        changedAt: v.optional(v.number()),
+        changedByName: v.optional(v.string()),
       }),
     ),
   }),
@@ -210,6 +263,8 @@ export const get = query({
           expectedTo: event.expectedTo,
           note: event.note,
           texted: event.texted,
+          changedAt: event.changedAt,
+          changedByName: event.changedBy ? (await ctx.db.get(event.changedBy))?.name : undefined,
         })),
       ),
     };

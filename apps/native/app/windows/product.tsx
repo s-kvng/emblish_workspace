@@ -215,6 +215,21 @@ function Timeline({ window }: { window: OrderWindow }) {
               {state !== "next" && stage === "orderedFromSupplier" ? (
                 <StoreQuantities window={window} />
               ) : null}
+              {state === "current" && isMarkable(stage) ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="mt-2 self-start"
+                  onPress={() =>
+                    router.push({
+                      pathname: "/windows/stage",
+                      params: { windowId: window._id, mode: "change" },
+                    })
+                  }
+                >
+                  <Button.Label>Change expected dates or note</Button.Label>
+                </Button>
+              ) : null}
               {state === "next" && index === current + 1 && isMarkable(stage) ? (
                 <View className="mt-2 gap-2 rounded-2xl border border-border border-dashed p-3">
                   <Button
@@ -248,7 +263,10 @@ function isMarkable(stage: WindowStage): stage is "orderedFromSupplier" | "inTra
   return stage === "orderedFromSupplier" || stage === "inTransit";
 }
 
-/** A stage's date and who did it, then its expected range, note and how many were texted. */
+/**
+ * A stage's date and who did it, then its expected range, note and how many were texted, and
+ * when the dates or note were last changed.
+ */
 function EventDetail({ event }: { event: OrderWindow["events"][number] }) {
   const expected = expectedLabel(event);
   return (
@@ -260,6 +278,11 @@ function EventDetail({ event }: { event: OrderWindow["events"][number] }) {
       {expected ? <Text className="font-sans text-foreground text-sm">{expected}</Text> : null}
       {event.note ? (
         <Text className="font-sans text-foreground text-sm italic">"{event.note}"</Text>
+      ) : null}
+      {event.changedAt ? (
+        <Text className="font-sans text-muted text-xs">
+          Changed {shortDate(event.changedAt)} · {event.changedByName ?? "Staff"}
+        </Text>
       ) : null}
     </View>
   );

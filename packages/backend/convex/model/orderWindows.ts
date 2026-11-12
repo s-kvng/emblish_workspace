@@ -334,26 +334,11 @@ export async function advanceWindow(
   const note = assertStageUpdate(update);
   const product = await getProduct(ctx, window.productId);
   const holders = await preorderHolders(ctx, windowId);
-  const rows = await listWindowVariants(ctx, windowId);
   const storeQuantities = update.storeQuantities ?? [];
   if (storeQuantities.length > 0 && update.stage !== "orderedFromSupplier") {
     refuse("INVALID_STORE_QUANTITY", "Store Quantity is set when it's ordered from the supplier.");
   }
-  for (const { variantId, quantity } of storeQuantities) {
-    if (!rows.some((row) => row.variantId === variantId)) {
-      refuse("INVALID_VARIANTS", "That Variant isn't offered in this window.");
-    }
-    if (!Number.isSafeInteger(quantity) || quantity < 0) {
-      refuse("INVALID_STORE_QUANTITY", "A Store Quantity is a whole number of units, 0 or more.");
-    }
-  }
-  if (new Set(storeQuantities.map((s) => s.variantId)).size !== storeQuantities.length) {
-    refuse("INVALID_VARIANTS", "A Variant is listed twice.");
-  }
-  for (const { variantId, quantity } of storeQuantities) {
-    const row = rows.find((r) => r.variantId === variantId);
-    if (row) await ctx.db.patch(row._id, { storeQuantity: quantity });
-  }
+  await setStoreQuantities(ctx, windowId, storeQuantities);
   await ctx.db.patch(windowId, { stage: update.stage });
   await ctx.db.insert("windowStageEvents", {
     orderWindowId: windowId,
@@ -373,6 +358,127 @@ export async function advanceWindow(
     );
   }
   return { texted: holders.length };
+}
+
+type StoreQuantities = NonNullable<StageUpdate["storeQuantities"]>;
+
+/** Checks and saves Store Quantities: whole units, 0 or more, for Variants offered in the window. */
+async function setStoreQuantities(
+  ctx: Pick<MutationCtx, "db">,
+  windowId: Id<"orderWindows">,
+  storeQuantities: StoreQuantities,
+) {
+  const rows = await listWindowVariants(ctx, windowId);
+  for (const { variantId, quantity } of storeQuantities) {
+    if (!rows.some((row) => row.variantId === variantId)) {
+      refuse("INVALID_VARIANTS", "That Variant isn't offered in this window.");
+    }
+    if (!Number.isSafeInteger(quantity) || quantity < 0) {
+      refuse("INVALID_STORE_QUANTITY", "A Store Quantity is a whole number of units, 0 or more.");
+    }
+  }
+  if (new Set(storeQuantities.map((s) => s.variantId)).size !== storeQuantities.length) {
+    refuse("INVALID_VARIANTS", "A Variant is listed twice.");
+  }
+  for (const { variantId, quantity } of storeQuantities) {
+    const row = rows.find((r) => r.variantId === variantId);
+    if (row) await ctx.db.patch(row._id, { storeQuantity: quantity });
+  }
+}
+
+/** What "Change expected dates or note" saves: it replaces the current stage's dates and note. */
+export type StageChange = Omit<StageUpdate, "stage">;
+
+/** The stage a window's dates, note and Store Quantity can be changed at: a marked one, until arrival. */
+function changeableStage(window: Doc<"orderWindows">): MarkableStage {
+  if (window.stage !== "orderedFromSupplier" && window.stage !== "inTransit") {
+    refuse(
+      "NOT_CHANGEABLE",
+      window.stage === "arrived"
+        ? `W${window.number} has arrived, so its dates can't be changed.`
+        : `Mark W${window.number} as ordered from the supplier first.`,
+    );
+  }
+  return window.stage;
+}
+
+/** The stage event the window is at now, which holds its expected dates and note. */
+async function currentStageEvent(ctx: Pick<QueryCtx, "db">, window: Doc<"orderWindows">) {
+  const events = await ctx.db
+    .query("windowStageEvents")
+    .withIndex("by_window", (q) => q.eq("orderWindowId", window._id))
+    .collect();
+  const event = [...events].reverse().find((e) => e.stage === window.stage);
+  if (!event) refuse("NOT_FOUND", `W${window.number} has no record of its current stage.`);
+  return event;
+}
+
+/**
+ * "Change expected dates or note" on a window's current stage, until it arrives: replaces the
+ * stage's expected dates and note with these, recording who changed them, and saves any Store
+ * Quantities. New dates text every Pre-order holder; a change to the note alone texts no one.
+ */
+export async function changeWindowStage(
+  ctx: Pick<MutationCtx, "db" | "scheduler">,
+  actor: Doc<"staff">,
+  windowId: Id<"orderWindows">,
+  change: StageChange,
+) {
+  const window = await getWindow(ctx, windowId);
+  const stage = changeableStage(window);
+  const note = assertStageUpdate({ ...change, stage });
+  await setStoreQuantities(ctx, windowId, change.storeQuantities ?? []);
+  const event = await currentStageEvent(ctx, window);
+  const { expectedFrom, expectedTo } = change;
+  const sameDates = expectedFrom === event.expectedFrom && expectedTo === event.expectedTo;
+  if (sameDates && note === event.note) return { texted: 0 };
+  await ctx.db.patch(event._id, {
+    expectedFrom,
+    expectedTo,
+    note,
+    changedAt: Date.now(),
+    changedBy: actor._id,
+  });
+  if (sameDates || expectedFrom === undefined || expectedTo === undefined) return { texted: 0 };
+  const product = await getProduct(ctx, window.productId);
+  const holders = await preorderHolders(ctx, windowId);
+  for (const holder of holders) {
+    await queueSms(ctx, holder.phone, "stageNewDates", {
+      references: holder.references,
+      productName: product.name,
+      expected: expectedRange(expectedFrom, expectedTo),
+      ordersUrl: ordersUrl(),
+    });
+  }
+  return { texted: holders.length };
+}
+
+/**
+ * The "Change expected dates or note" sheet: the stage it changes, how many Customers new dates
+ * would text, and the SMS the first of them would get. Null when the window can't be changed.
+ */
+export async function describeChangeSheet(
+  ctx: Pick<QueryCtx, "db">,
+  windowId: Id<"orderWindows">,
+  dates: Pick<StageUpdate, "expectedFrom" | "expectedTo">,
+) {
+  const window = await getWindow(ctx, windowId);
+  if (window.stage !== "orderedFromSupplier" && window.stage !== "inTransit") return null;
+  const event = await currentStageEvent(ctx, window);
+  const product = await getProduct(ctx, window.productId);
+  const holders = await preorderHolders(ctx, windowId);
+  const from = dates.expectedFrom ?? event.expectedFrom;
+  const to = dates.expectedTo ?? event.expectedTo;
+  const preview =
+    from !== undefined && to !== undefined && to >= from
+      ? renderSms("stageNewDates", {
+          references: holders[0]?.references ?? ["P-0000"],
+          productName: product.name,
+          expected: expectedRange(from, to),
+          ordersUrl: ordersUrl(),
+        })
+      : null;
+  return { stage: window.stage, customers: holders.length, preview };
 }
 
 const stageTemplate = {
