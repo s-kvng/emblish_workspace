@@ -170,11 +170,17 @@ export const orderEventKind = v.union(
   v.literal("refundFlagged"),
   v.literal("refunded"),
 );
-/** Who did something to an order: a Staff member, or the system (such as a verified payment). */
+/**
+ * Who did something to an order: a Staff member, the Customer (cancelling their own Pre-order),
+ * or the system (such as a verified payment).
+ */
 export const orderActor = v.union(
   v.object({ kind: v.literal("staff"), staffId: v.id("staff") }),
+  v.object({ kind: v.literal("customer"), customerId: v.id("customers") }),
   v.object({ kind: v.literal("system") }),
 );
+/** Who cancelled a Pre-order: the Customer from My orders, or Staff from order detail. */
+export const cancelReason = v.union(v.literal("customer"), v.literal("staff"));
 export const refundKind = v.union(
   v.literal("shortfall"),
   v.literal("latePaid"),
@@ -465,6 +471,8 @@ export default defineSchema({
     pickupCode: v.string(),
     status: orderStatus,
     readyAt: v.optional(v.number()),
+    /** Set on a cancelled Pre-order: who cancelled it. */
+    cancelReason: v.optional(cancelReason),
   })
     .index("by_reference", ["reference"])
     .index("by_customer", ["customerId"])
@@ -496,9 +504,9 @@ export default defineSchema({
     riderName: v.optional(v.string()),
     /** Set on `deliveryFailed`. */
     failureReason: v.optional(deliveryFailureReason),
-    /** Set on `unitsCancelled` and `refundFlagged`: how many units. */
+    /** Set on `unitsCancelled`, `refundFlagged` and a Pre-order's `cancelled`: how many units. */
     units: v.optional(v.number()),
-    /** Pesewas, set on `unitsCancelled`, `refundFlagged` and `refunded`. */
+    /** Pesewas, set on `unitsCancelled`, `refundFlagged`, `refunded` and a Pre-order's `cancelled`. */
     amount: v.optional(v.number()),
     note: v.optional(v.string()),
   }).index("by_order", ["orderId"]),

@@ -23,13 +23,16 @@ import {
 } from "../model/orders";
 import {
   cancellable,
+  cancelPreorder as cancelOrderPreorder,
   cancelUnits as cancelOrderUnits,
   handedOver,
+  preorderCancellable,
   refundableDeliveryFee,
   refundAfterHandover as refundOrderAfterHandover,
 } from "../model/refunds";
 import { pickupLocation } from "../model/settings";
 import {
+  cancelReason,
   deliveryFailureReason,
   orderEventKind,
   orderKind,
@@ -170,6 +173,21 @@ export const cancelUnits = mutation({
 });
 
 /**
+ * Cancels a whole Pre-order awaiting arrival, at any window stage; after "Ordered from supplier"
+ * this is the only way. Its window's `preordered` counts drop and its Item Payment is flagged
+ * as a `cancelledPreorder` Refund for the Owner to pay out.
+ */
+export const cancelPreorder = mutation({
+  args: { orderId: v.id("orders"), note: v.optional(v.string()) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const staff = await requireStaff(ctx);
+    await cancelOrderPreorder(ctx, { kind: "staff", staff }, args);
+    return null;
+  },
+});
+
+/**
  * The Owner refunds a handed-over order: units and/or its paid Delivery Fee, with a reason.
  * Goods that came back can be restocked as Returned. The Refund waits on Refunds to make.
  */
@@ -217,8 +235,12 @@ export const get = query({
     ),
     /** Pesewas flagged for refund from this order's payment and not yet refunded. */
     toRefund: v.number(),
+    /** On a cancelled Pre-order: whether the Customer or Staff cancelled it. */
+    cancelReason: v.optional(cancelReason),
     /** Staff may cancel units: the goods are still with us. */
     canCancelUnits: v.boolean(),
+    /** Staff may cancel the whole Pre-order: it's still awaiting arrival. */
+    canCancelPreorder: v.boolean(),
     /** The Customer has the goods, so an Owner may refund after handover. */
     canRefundAfterHandover: v.boolean(),
     /** Pesewas of the paid Delivery Fee not yet flagged for refund. */
@@ -280,7 +302,9 @@ export const get = query({
           ]
         : [],
       toRefund: await owedBack(ctx, order),
+      ...(order.cancelReason ? { cancelReason: order.cancelReason } : {}),
       canCancelUnits: cancellable(order),
+      canCancelPreorder: preorderCancellable(order),
       canRefundAfterHandover: handedOver(order),
       refundableDeliveryFee: await refundableDeliveryFee(ctx, order),
       history: await orderHistory(ctx, order._id),

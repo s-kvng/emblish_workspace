@@ -3,7 +3,7 @@
 import { api } from "@emblish_workspace/backend/convex/_generated/api";
 import type { OrderStatus } from "@emblish_workspace/backend/convex/model/orders";
 import { Button } from "@emblish_workspace/ui/components/button";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { Check, ChevronDown, KeyRound, ReceiptText } from "lucide-react";
 import type { Route } from "next";
@@ -13,6 +13,7 @@ import { useState } from "react";
 
 import ProductPhoto from "@/components/storefront/product-photo";
 import { authClient } from "@/lib/auth-client";
+import { messageOf } from "@/lib/convex-errors";
 import { cedi } from "@/lib/money";
 
 type Card = FunctionReturnType<typeof api.storefront.orders.mine>[number];
@@ -53,8 +54,20 @@ const eventLabel: Record<Card["history"][number]["kind"], string> = {
   refunded: "Refund sent",
 };
 
+/** "Refund pending" or "Refunded" for a cancelled Pre-order's Item Payment refund. */
+function cancelRefundState(card: Card) {
+  const refund = card.refunds.find((r) => r.reason === "cancelledPreorder");
+  if (!refund) return undefined;
+  return refund.refunded ? "Refunded" : "Refund pending";
+}
+
 /** The status line, worded for how the order reaches the Customer. */
 function statusText(card: Card) {
+  if (card.status === "cancelled" && card.kind === "preorder") {
+    const by = card.cancelReason === "customer" ? "Cancelled by you" : "Cancelled";
+    const refund = cancelRefundState(card);
+    return refund ? `${by} · ${refund}` : by;
+  }
   if (card.fulfilment.method === "delivery") {
     if (card.status === "ready") return "Ready for delivery";
     // Elsewhere in Ghana: placed before Staff have quoted its Delivery Fee.
@@ -533,6 +546,10 @@ function CardDetail({ card }: { card: Card }) {
         )}
       </Section>
 
+      {card.kind === "preorder" && card.status === "awaitingArrival" && (
+        <CancelPreorder card={card} />
+      )}
+
       <Section title="History">
         <ol className="grid gap-1 text-sm">
           {card.history.map((event) => (
@@ -544,6 +561,100 @@ function CardDetail({ card }: { card: Card }) {
         </ol>
       </Section>
     </div>
+  );
+}
+
+/**
+ * "Cancel this Pre-order (full refund)" until the window reaches "Ordered from supplier", with a
+ * small confirming sheet; after that, a pointer to contact us.
+ */
+function CancelPreorder({ card }: { card: Card }) {
+  const cancel = useMutation(api.storefront.orders.cancelPreorder);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const refund = card.lines.reduce(
+    (sum, line) => sum + (line.quantity - line.refundedQuantity) * line.unitPrice,
+    0,
+  );
+
+  if (!card.canCancel) {
+    return (
+      <p className="text-muted-foreground text-xs">
+        We've ordered this from the supplier, so it can't be cancelled here. Need to cancel? Contact
+        us.
+      </p>
+    );
+  }
+
+  async function confirm() {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await cancel({ orderId: card.orderId });
+      setConfirming(false);
+    } catch (e) {
+      setError(messageOf(e, "We couldn't cancel it. Try again."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <Button
+        variant="outline"
+        className="h-11 w-full text-sm"
+        onClick={() => {
+          setError(undefined);
+          setConfirming(true);
+        }}
+      >
+        Cancel this Pre-order (full refund)
+      </Button>
+      {confirming && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={`cancel-${card.orderId}`}
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/50"
+          // A tap on the backdrop or Escape keeps the Pre-order, unless it's mid-cancel.
+          onClick={(e) => e.target === e.currentTarget && !busy && setConfirming(false)}
+          onKeyDown={(e) => e.key === "Escape" && !busy && setConfirming(false)}
+        >
+          <div className="w-full max-w-md rounded-t-2xl bg-card p-5 pb-8">
+            <h2 id={`cancel-${card.orderId}`} className="font-semibold text-lg">
+              Cancel {card.reference}?
+            </h2>
+            <p className="mt-1 text-muted-foreground text-sm">
+              You get the full {cedi(refund)} back. We send it to the way you paid, and it shows
+              here as "Refund pending" until it lands.
+            </p>
+            {error && <p className="mt-3 text-destructive text-sm">{error}</p>}
+            <div className="mt-4 grid gap-2">
+              <Button
+                variant="destructive"
+                size="lg"
+                className="h-11 w-full text-sm"
+                disabled={busy}
+                onClick={confirm}
+              >
+                {busy ? "Cancelling…" : "Cancel Pre-order"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="lg"
+                className="h-11 w-full text-sm"
+                disabled={busy}
+                onClick={() => setConfirming(false)}
+              >
+                Keep it
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

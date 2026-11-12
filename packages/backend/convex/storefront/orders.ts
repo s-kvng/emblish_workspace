@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 
-import { query } from "../_generated/server";
+import { mutation, query } from "../_generated/server";
 import { requireCustomer } from "../lib/guards";
 import { deliveryAsShown, shownDelivery } from "../model/fulfilment";
 import {
@@ -10,8 +10,16 @@ import {
   orderLinesWithPhotos,
   refundsOnOrder,
 } from "../model/orders";
+import { cancelPreorder as cancelOwnPreorder, selfCancellable } from "../model/refunds";
 import { pickupLocation } from "../model/settings";
-import { orderEventKind, orderKind, orderStatus, refundKind, windowStage } from "../schema";
+import {
+  cancelReason,
+  orderEventKind,
+  orderKind,
+  orderStatus,
+  refundKind,
+  windowStage,
+} from "../schema";
 
 const card = v.object({
   orderId: v.id("orders"),
@@ -23,6 +31,13 @@ const card = v.object({
   needsAction: v.boolean(),
   /** Collected, Delivered, Cancelled or Forfeited: shown under "Past orders". */
   past: v.boolean(),
+  /**
+   * Pre-orders only: "Cancel this Pre-order (full refund)" is offered, until the window reaches
+   * "Ordered from supplier".
+   */
+  canCancel: v.boolean(),
+  /** On a cancelled Pre-order: whether the Customer or Staff cancelled it. */
+  cancelReason: v.optional(cancelReason),
   /** Only while the order is Ready for pickup; never once it's handed over. */
   pickupCode: v.optional(v.string()),
   lines: v.array(
@@ -96,6 +111,8 @@ export const mine = query({
         status: order.status,
         needsAction: customerNeedsToAct(order),
         past: isPastOrder(order),
+        canCancel: await selfCancellable(ctx, order),
+        ...(order.cancelReason ? { cancelReason: order.cancelReason } : {}),
         ...(handOverable(order) ? { pickupCode: order.pickupCode } : {}),
         lines: await orderLinesWithPhotos(ctx, order._id),
         payment: {
@@ -144,5 +161,20 @@ export const mine = query({
     // Newest first (the index reads oldest first), then a stable sort by what needs the Customer.
     const rank = (c: { needsAction: boolean; past: boolean }) => (c.needsAction ? 0 : c.past ? 2 : 1);
     return cards.reverse().sort((a, b) => rank(a) - rank(b));
+  },
+});
+
+/**
+ * Cancel this Pre-order (full refund): free and immediate until its window reaches "Ordered from
+ * supplier", and only the Customer's own. The Item Payment shows as "Refund pending" until the
+ * Owner pays it out.
+ */
+export const cancelPreorder = mutation({
+  args: { orderId: v.id("orders") },
+  returns: v.null(),
+  handler: async (ctx, { orderId }) => {
+    const customer = await requireCustomer(ctx);
+    await cancelOwnPreorder(ctx, { kind: "customer", customer }, { orderId });
+    return null;
   },
 });
