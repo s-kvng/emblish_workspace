@@ -32,6 +32,8 @@ export const windowStage = v.union(
   v.literal("inTransit"),
   v.literal("arrived"),
 );
+/** The stages Staff mark by hand ("Mark as <next>"); Closed is Close now, Arrived the arrival. */
+export const markableStage = v.union(v.literal("orderedFromSupplier"), v.literal("inTransit"));
 /** Every way Stock changes; see GLOSSARY.md, Stock Movement. */
 export const stockMovementKind = v.union(
   v.literal("arrival"),
@@ -64,8 +66,12 @@ export const smsTemplate = v.union(
   v.literal("paymentConfirmed"),
   v.literal("paymentConfirmedDelivery"),
   v.literal("paymentConfirmedQuoteDelivery"),
+  v.literal("paymentConfirmedPreorder"),
   v.literal("paymentNotFilled"),
   v.literal("paymentUnmatched"),
+  v.literal("stageOrdered"),
+  v.literal("stageInTransit"),
+  v.literal("stageNewDates"),
 );
 /** A Checkout's life: `pending` while it awaits payment, then paid, or expired / released unpaid. */
 export const checkoutStatus = v.union(
@@ -74,14 +80,16 @@ export const checkoutStatus = v.union(
   v.literal("expired"),
   v.literal("released"),
 );
-/** A Checkout line as it was priced at Pay. */
+/** A Checkout line as it was priced at Pay: In-stock, or a Pre-order in `orderWindowId`. */
 export const checkoutLine = v.object({
   variantId: v.id("variants"),
+  /** Set on a Pre-order line: the Order Window it's ordered in. */
+  orderWindowId: v.optional(v.id("orderWindows")),
   productName: v.string(),
   /** The Variant's option values joined, e.g. "Red / M"; empty for a default Variant. */
   variantLabel: v.string(),
   quantity: v.number(),
-  /** Integer pesewas: the Store Price at Pay. */
+  /** Integer pesewas: the Store Price, or the window's Pre-order price, at Pay. */
   unitPrice: v.number(),
 });
 /** The Delivery address as the Customer typed it at Checkout. */
@@ -121,6 +129,8 @@ export const fulfilmentRequest = v.union(
     recipientPhone: v.optional(v.string()),
   }),
 );
+/** A Store Order (In-stock, paid in full) or a Pre-order (one Order Window); ADR 0002. */
+export const orderKind = v.union(v.literal("store"), v.literal("preorder"));
 /** Shared by both order kinds; see the data-model decision. */
 export const orderStatus = v.union(
   v.literal("awaitingArrival"),
@@ -330,6 +340,11 @@ export default defineSchema({
     preordered: v.number(),
     /** Cached units under active window-cap holds. */
     held: v.number(),
+    /**
+     * Extra units for Stock added to the supplier order, set when it's marked "Ordered from
+     * supplier"; missing reads as 0.
+     */
+    storeQuantity: v.optional(v.number()),
   })
     .index("by_window", ["orderWindowId"])
     .index("by_variant", ["variantId"]),
@@ -340,6 +355,19 @@ export default defineSchema({
     stage: windowStage,
     /** Missing when the system did it, such as the auto-close. */
     staffId: v.optional(v.id("staff")),
+    /** The expected arrival range Staff gave with it, as times on its first and last days. */
+    expectedFrom: v.optional(v.number()),
+    expectedTo: v.optional(v.number()),
+    /** Staff's note to Customers. */
+    note: v.optional(v.string()),
+    /** How many Customers were texted about it; missing when no one was. */
+    texted: v.optional(v.number()),
+    /**
+     * When Staff last changed the expected dates or note ("Change expected dates or note"), and
+     * who. The fields above always hold the latest values.
+     */
+    changedAt: v.optional(v.number()),
+    changedBy: v.optional(v.id("staff")),
   }).index("by_window", ["orderWindowId"]),
 
   // Append-only: Stock is the sum of a Variant's rows, never edited directly.
@@ -370,11 +398,14 @@ export default defineSchema({
     expiresAt: v.number(),
   }).index("by_customer_and_status", ["customerId", "status"]),
 
-  // Units a Checkout sets aside. Stock-kind only for now; Order Window caps add `windowCap`.
+  // Units a Checkout sets aside: In-stock units (`stock`), or units under a capped Order
+  // Window's cap (`windowCap`). Uncapped Pre-order lines hold nothing. They end together.
   checkoutHolds: defineTable({
     checkoutId: v.id("checkouts"),
-    kind: v.literal("stock"),
+    kind: v.union(v.literal("stock"), v.literal("windowCap")),
     variantId: v.id("variants"),
+    /** Set on a `windowCap` hold: the window whose cap it counts against. */
+    orderWindowId: v.optional(v.id("orderWindows")),
     quantity: v.number(),
     status: v.union(
       v.literal("active"),
@@ -415,14 +446,19 @@ export default defineSchema({
     .index("by_customer", ["customerId"])
     .index("by_checkout", ["checkoutId"]),
 
-  // Pre-orders and Store Orders (ADR 0002). Only Store Orders exist so far.
+  // Pre-orders and Store Orders (ADR 0002).
   orders: defineTable({
-    kind: v.literal("store"),
-    /** `S-0001`. */
+    kind: orderKind,
+    /** `S-0001` for a Store Order, `P-0001` for a Pre-order. */
     reference: v.string(),
+    /** Pre-orders only: the Order Window it was ordered in. */
+    orderWindowId: v.optional(v.id("orderWindows")),
+    /** Pre-orders only: integer pesewas of the payment that were its Item Payment. */
+    itemPayment: v.optional(v.number()),
     customerId: v.id("customers"),
     checkoutId: v.id("checkouts"),
     paymentId: v.id("payments"),
+    /** When its payment settled; earliest-placed Pre-orders are filled first on a Shortfall. */
     placedAt: v.number(),
     fulfilment,
     /** 6 digits, unique among open orders. */
@@ -432,6 +468,7 @@ export default defineSchema({
   })
     .index("by_reference", ["reference"])
     .index("by_customer", ["customerId"])
+    .index("by_orderWindow", ["orderWindowId"])
     .index("by_payment", ["paymentId"])
     .index("by_status", ["status"])
     .index("by_pickupCode_and_status", ["pickupCode", "status"]),

@@ -3,15 +3,19 @@ import { v } from "convex/values";
 import { mutation, query } from "../_generated/server";
 import { requireStaff } from "../lib/guards";
 import {
+  advanceWindow,
+  changeWindowStage,
   closeWindow,
+  describeChangeSheet,
   discardDraft,
   extendWindow,
   getWindow,
   saveWindow,
+  describeStageSheet,
 } from "../model/orderWindows";
 import { getProduct, inOptionOrder, listVariants } from "../model/products";
 import { currentWindow, listWindowVariants } from "../model/windowLookups";
-import { windowStage } from "../schema";
+import { markableStage, windowStage } from "../schema";
 
 const windowRow = {
   variantId: v.id("variants"),
@@ -26,6 +30,11 @@ const terms = {
   /** Integer pesewas per unit. */
   shippingFeeEstimate: v.optional(v.number()),
 };
+
+/** Extra units for Stock per offered Variant, on the supplier order. */
+const storeQuantities = v.optional(
+  v.array(v.object({ variantId: v.id("variants"), quantity: v.number() })),
+);
 
 /** The opening wizard's Review step: saves a draft, or opens the window. */
 export const save = mutation({
@@ -70,6 +79,96 @@ export const closeNow = mutation({
   },
 });
 
+/**
+ * "Mark as <next stage>": Closed → Ordered from supplier → In transit, in order only, with the
+ * expected arrival dates and a note to Customers.
+ */
+export const advance = mutation({
+  args: {
+    windowId: v.id("orderWindows"),
+    stage: markableStage,
+    expectedFrom: v.optional(v.number()),
+    expectedTo: v.optional(v.number()),
+    note: v.optional(v.string()),
+    /** At "Ordered from supplier": extra units for Stock per offered Variant. */
+    storeQuantities,
+  },
+  returns: v.object({ texted: v.number() }),
+  handler: async (ctx, { windowId, ...update }) => {
+    const actor = await requireStaff(ctx);
+    return await advanceWindow(ctx, actor, windowId, update);
+  },
+});
+
+/**
+ * The "Mark as <next>" sheet: the stage it marks (null when none can be marked by hand), the
+ * Customers "Text N Customers" will text, and a preview of their SMS with these dates.
+ */
+export const stageSheet = query({
+  args: {
+    windowId: v.id("orderWindows"),
+    expectedFrom: v.optional(v.number()),
+    expectedTo: v.optional(v.number()),
+  },
+  returns: v.union(
+    v.object({
+      next: markableStage,
+      customers: v.number(),
+      preview: v.string(),
+    }),
+    v.object({ next: v.null(), customers: v.number(), preview: v.null() }),
+  ),
+  handler: async (ctx, { windowId, ...dates }) => {
+    await requireStaff(ctx);
+    return await describeStageSheet(ctx, windowId, dates);
+  },
+});
+
+/**
+ * "Change expected dates or note" on the current stage, from Ordered from supplier until
+ * arrival. The dates and note replace the stage's (leave them out to clear them), as the sheet
+ * shows them; any Store Quantities given are saved too. New dates text every Pre-order holder;
+ * a change to the note alone, or to Store Quantity, texts no one.
+ */
+export const change = mutation({
+  args: {
+    windowId: v.id("orderWindows"),
+    expectedFrom: v.optional(v.number()),
+    expectedTo: v.optional(v.number()),
+    note: v.optional(v.string()),
+    storeQuantities,
+  },
+  returns: v.object({ texted: v.number() }),
+  handler: async (ctx, { windowId, ...change }) => {
+    const actor = await requireStaff(ctx);
+    return await changeWindowStage(ctx, actor, windowId, change);
+  },
+});
+
+/**
+ * The "Change expected dates or note" sheet: the stage it changes, the Customers new dates
+ * would text, and their SMS with these dates (or the current ones). Null once it can't change.
+ */
+export const changeSheet = query({
+  args: {
+    windowId: v.id("orderWindows"),
+    expectedFrom: v.optional(v.number()),
+    expectedTo: v.optional(v.number()),
+  },
+  returns: v.union(
+    v.null(),
+    v.object({
+      stage: markableStage,
+      customers: v.number(),
+      preview: v.union(v.string(), v.null()),
+    }),
+  ),
+  handler: async (ctx, { windowId, ...dates }) => {
+    await requireStaff(ctx);
+    return await describeChangeSheet(ctx, windowId, dates);
+  },
+});
+
 /** Throws away a draft window that never opened. */
 export const discard = mutation({
   args: { windowId: v.id("orderWindows") },
@@ -99,6 +198,8 @@ export const get = query({
         label: v.string(),
         preordered: v.number(),
         held: v.number(),
+        /** Extra units for Stock on the supplier order; 0 until set. */
+        storeQuantity: v.number(),
       }),
     ),
     events: v.array(
@@ -106,6 +207,14 @@ export const get = query({
         stage: windowStage,
         at: v.number(),
         staffName: v.optional(v.string()),
+        expectedFrom: v.optional(v.number()),
+        expectedTo: v.optional(v.number()),
+        note: v.optional(v.string()),
+        /** Customers texted about it; missing when no one was. */
+        texted: v.optional(v.number()),
+        /** When the expected dates or note were last changed, and by whom. */
+        changedAt: v.optional(v.number()),
+        changedByName: v.optional(v.string()),
       }),
     ),
   }),
@@ -140,6 +249,7 @@ export const get = query({
                 cap: row.cap,
                 preordered: row.preordered,
                 held: row.held,
+                storeQuantity: row.storeQuantity ?? 0,
               },
             ]
           : [];
@@ -149,6 +259,12 @@ export const get = query({
           stage: event.stage,
           at: event._creationTime,
           staffName: event.staffId ? (await ctx.db.get(event.staffId))?.name : undefined,
+          expectedFrom: event.expectedFrom,
+          expectedTo: event.expectedTo,
+          note: event.note,
+          texted: event.texted,
+          changedAt: event.changedAt,
+          changedByName: event.changedBy ? (await ctx.db.get(event.changedBy))?.name : undefined,
         })),
       ),
     };

@@ -213,6 +213,7 @@ describe("The Bag prices its Pre-order lines", () => {
         preorderPrice: 38000,
         left: 4,
         closesAt: expect.any(Number),
+        minimumOrderQuantity: 2,
       }),
     ]);
   });

@@ -1,22 +1,34 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
-import { convertHolds, deliveryFeesToday } from "./checkout";
+import { convertHolds, deliveryFeesToday, preorderGroups, storeLines } from "./checkout";
 import { newPickupCode, newReceiptCode, nextReference } from "./codes";
 import { awaitsDeliveryQuote } from "./fulfilment";
 import { queueSms } from "./sms";
 import { recordMovement, stockCounts } from "./stock";
+import { windowRowFor } from "./windowLookups";
 
 /** The public link to a Receipt. */
 export function receiptUrl(code: string) {
   return `${process.env.SITE_URL}/r/${code}`;
 }
 
+/** Window stages from which the supplier order is placed, so a late Pre-order can't join it. */
+const supplierOrdered: readonly Doc<"orderWindows">["stage"][] = [
+  "orderedFromSupplier",
+  "inTransit",
+  "arrived",
+];
+
 /**
  * Settles a payment Seev has verified, once per reference however often it's reported.
- * It always writes the `payments` row, so no charge goes unrecorded, then:
- * - Paid while the Checkout still holds its Stock: every held unit is Sold to a Store Order.
- * - Paid late (the Checkout expired or was released): Stock fills what it can, earliest
- *   line first, and the rest is a `latePaid` Refund.
+ * It always writes the `payments` row, so no charge goes unrecorded, then splits the Checkout
+ * into at most one Store Order plus one Pre-order per Order Window:
+ * - In-stock lines, paid while the Checkout still holds their Stock: every held unit is Sold
+ *   to the Store Order. Paid late (the Checkout expired or was released): Stock fills what it
+ *   can, earliest line first, and the rest is a `latePaid` Refund.
+ * - Pre-order lines, per window: a Pre-order awaiting arrival. Paid late, it's placed even
+ *   past the cap, unless the window has reached "Ordered from supplier": then its whole
+ *   Item Payment share is a `latePaid` Refund. Paid on time, its held places are kept.
  * - A second charge on an already-paid Checkout, or an amount that doesn't match it, makes
  *   no order: all of it is a Refund for an Owner to look at.
  * Then one SMS goes out for the charge.
@@ -69,41 +81,39 @@ export async function settlePayment(
     return;
   }
 
-  const held = checkout.status === "pending" ? await convertHolds(ctx, checkout._id) : [];
-  const filled = [];
-  let toRefund = 0;
-  for (const line of checkout.lines) {
-    const variant = await ctx.db.get(line.variantId);
-    const { onHand, available } = variant ? stockCounts(variant) : { onHand: 0, available: 0 };
-    const isHeld = held.some((hold) => hold.variantId === line.variantId);
-    // Held units only need to be on hand; anything else must also be free of others' holds.
-    const coverable = Math.max(0, isHeld ? onHand : available);
-    const quantity = Math.min(line.quantity, coverable);
-    if (quantity > 0) filled.push({ ...line, quantity });
-    toRefund += (line.quantity - quantity) * line.unitPrice;
-  }
-
-  let order: { orderId: Id<"orders">; reference: string; pickupCode: string } | null = null;
-  if (filled.length > 0) {
-    order = await createStoreOrder(ctx, checkout, paymentId, filled, now);
-  }
-  // With nothing filled there's nothing to deliver, so its Delivery Fee goes back too.
-  if (!order) toRefund += deliveryFeesToday(checkout);
-  if (toRefund > 0) {
-    await ctx.db.insert("refunds", {
-      paymentId,
-      ...(order ? { orderId: order.orderId } : {}),
-      kind: "latePaid",
-      amount: toRefund,
-      status: "toRefund",
-      returnToStock: false,
-    });
+  const onTime = checkout.status === "pending";
+  const held = onTime ? await convertHolds(ctx, checkout._id) : [];
+  const order = await settleStoreLines(ctx, checkout, paymentId, held, now);
+  let toRefund = order.toRefund;
+  const preorders: string[] = [];
+  for (const group of preorderGroups(checkout.lines)) {
+    const window = await ctx.db.get(group.orderWindowId);
+    const share = group.lines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0);
+    if (!window || (!onTime && supplierOrdered.includes(window.stage))) {
+      toRefund += share;
+      await ctx.db.insert("refunds", {
+        paymentId,
+        kind: "latePaid",
+        amount: share,
+        status: "toRefund",
+        returnToStock: false,
+        note: window
+          ? `Paid after W${window.number} of ${group.lines[0]?.productName} was ordered from the supplier.`
+          : "Paid for an Order Window that no longer exists.",
+      });
+      continue;
+    }
+    preorders.push(await createPreorder(ctx, checkout, paymentId, group, share, now));
   }
   await ctx.db.patch(checkout._id, { status: "paid" });
 
-  const refund = toRefund > 0 ? { refund: toRefund } : {};
+  const extras = {
+    ...(toRefund > 0 ? { refund: toRefund } : {}),
+    ...(preorders.length > 0 ? { preorders } : {}),
+  };
   const { fulfilment } = checkout;
-  if (order && fulfilment.method === "delivery") {
+  const store = order.created;
+  if (store && fulfilment.method === "delivery") {
     await queueSms(
       ctx,
       customer.phone,
@@ -112,23 +122,125 @@ export async function settlePayment(
         : "paymentConfirmedDelivery",
       {
         amount,
-        reference: order.reference,
+        reference: store.reference,
         zoneName: fulfilment.zoneName,
         receiptUrl: url,
-        ...refund,
+        ...extras,
       },
     );
-  } else if (order) {
+  } else if (store) {
     await queueSms(ctx, customer.phone, "paymentConfirmed", {
       amount,
-      reference: order.reference,
-      pickupCode: order.pickupCode,
+      reference: store.reference,
+      pickupCode: store.pickupCode,
       receiptUrl: url,
-      ...refund,
+      ...extras,
+    });
+  } else if (preorders.length > 0) {
+    await queueSms(ctx, customer.phone, "paymentConfirmedPreorder", {
+      amount,
+      references: preorders,
+      receiptUrl: url,
+      ...(toRefund > 0 ? { refund: toRefund } : {}),
     });
   } else {
     await queueSms(ctx, customer.phone, "paymentNotFilled", { amount, receiptUrl: url });
   }
+}
+
+/**
+ * The Checkout's In-stock lines become its Store Order, filled from the Stock its holds kept
+ * (or, paid late, from whatever is still free), with a `latePaid` Refund for the rest.
+ */
+async function settleStoreLines(
+  ctx: Pick<MutationCtx, "db">,
+  checkout: Doc<"checkouts">,
+  paymentId: Id<"payments">,
+  held: Doc<"checkoutHolds">[],
+  now: number,
+) {
+  const lines = storeLines(checkout.lines);
+  const filled = [];
+  let toRefund = 0;
+  for (const line of lines) {
+    const variant = await ctx.db.get(line.variantId);
+    const { onHand, available } = variant ? stockCounts(variant) : { onHand: 0, available: 0 };
+    const isHeld = held.some((hold) => hold.kind === "stock" && hold.variantId === line.variantId);
+    // Held units only need to be on hand; anything else must also be free of others' holds.
+    const coverable = Math.max(0, isHeld ? onHand : available);
+    const quantity = Math.min(line.quantity, coverable);
+    if (quantity > 0) filled.push({ ...line, quantity });
+    toRefund += (line.quantity - quantity) * line.unitPrice;
+  }
+
+  const created =
+    filled.length > 0 ? await createStoreOrder(ctx, checkout, paymentId, filled, now) : null;
+  // With nothing filled there's nothing to deliver, so its Delivery Fee goes back too.
+  if (lines.length > 0 && !created) toRefund += deliveryFeesToday(checkout);
+  if (toRefund > 0) {
+    await ctx.db.insert("refunds", {
+      paymentId,
+      ...(created ? { orderId: created.orderId } : {}),
+      kind: "latePaid",
+      amount: toRefund,
+      status: "toRefund",
+      returnToStock: false,
+    });
+  }
+  return { created, toRefund };
+}
+
+/**
+ * A Pre-order for one window's lines, at the prices frozen at Pay, awaiting arrival. Its units
+ * count as Pre-ordered in the window (past the cap, if paid late). Its Delivery Fee, if any,
+ * comes on its Shipping Fee Invoice.
+ */
+async function createPreorder(
+  ctx: Pick<MutationCtx, "db">,
+  checkout: Doc<"checkouts">,
+  paymentId: Id<"payments">,
+  group: {
+    orderWindowId: Id<"orderWindows">;
+    lines: Doc<"checkouts">["lines"];
+  },
+  itemPayment: number,
+  now: number,
+) {
+  const reference = await nextReference(ctx, "P");
+  const orderId = await ctx.db.insert("orders", {
+    kind: "preorder",
+    reference,
+    orderWindowId: group.orderWindowId,
+    itemPayment,
+    customerId: checkout.customerId,
+    checkoutId: checkout._id,
+    paymentId,
+    placedAt: now,
+    fulfilment: checkout.fulfilment,
+    pickupCode: await newPickupCode(ctx),
+    status: "awaitingArrival",
+  });
+  await ctx.db.insert("orderEvents", {
+    orderId,
+    kind: "paid",
+    actor: { kind: "system" },
+  });
+  for (const line of group.lines) {
+    await ctx.db.insert("orderLines", {
+      orderId,
+      variantId: line.variantId,
+      productName: line.productName,
+      variantLabel: line.variantLabel,
+      unitPrice: line.unitPrice,
+      quantity: line.quantity,
+    });
+    const row = await windowRowFor(ctx, group.orderWindowId, line.variantId);
+    if (row)
+      await ctx.db.patch(row._id, {
+        preordered: row.preordered + line.quantity,
+      });
+  }
+  return reference;
 }
 
 /**

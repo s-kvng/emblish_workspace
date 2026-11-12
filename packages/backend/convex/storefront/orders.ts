@@ -11,13 +11,13 @@ import {
   refundsOnOrder,
 } from "../model/orders";
 import { pickupLocation } from "../model/settings";
-import { orderEventKind, orderStatus, refundKind } from "../schema";
+import { orderEventKind, orderKind, orderStatus, refundKind, windowStage } from "../schema";
 
 const card = v.object({
   orderId: v.id("orders"),
-  /** `S-0001`. */
+  /** `S-0001` for a Store Order, `P-0001` for a Pre-order. */
   reference: v.string(),
-  kind: v.literal("store"),
+  kind: orderKind,
   status: orderStatus,
   /** The Customer has something to do: a Pickup Code to show (an invoice to pay, later). */
   needsAction: v.boolean(),
@@ -52,6 +52,23 @@ const card = v.object({
   ),
   /** From `orderEvents`, oldest first. Who acted stays in the Back Office. */
   history: v.array(v.object({ kind: orderEventKind, at: v.number() })),
+  /** Pre-orders only: the Order Window's stage and its timeline, oldest stage first. */
+  window: v.optional(
+    v.object({
+      number: v.number(),
+      stage: windowStage,
+      /** From `windowStageEvents`. Who acted stays in the Back Office. */
+      timeline: v.array(
+        v.object({
+          stage: windowStage,
+          at: v.number(),
+          expectedFrom: v.optional(v.number()),
+          expectedTo: v.optional(v.number()),
+          note: v.optional(v.string()),
+        }),
+      ),
+    }),
+  ),
   /** Money owed back on this order: "Refund pending" until Staff send it, then "Refunded". */
   refunds: v.array(v.object({ amount: v.number(), reason: refundKind, refunded: v.boolean() })),
 });
@@ -71,6 +88,7 @@ export const mine = query({
     for (const order of orders) {
       const payment = await ctx.db.get(order.paymentId);
       if (!payment) continue;
+      const window = order.orderWindowId ? await ctx.db.get(order.orderWindowId) : null;
       cards.push({
         orderId: order._id,
         reference: order.reference,
@@ -96,6 +114,26 @@ export const mine = query({
             .withIndex("by_order", (q) => q.eq("orderId", order._id))
             .collect()
         ).map((event) => ({ kind: event.kind, at: event._creationTime })),
+        ...(window
+          ? {
+              window: {
+                number: window.number,
+                stage: window.stage,
+                timeline: (
+                  await ctx.db
+                    .query("windowStageEvents")
+                    .withIndex("by_window", (q) => q.eq("orderWindowId", window._id))
+                    .collect()
+                ).map((event) => ({
+                  stage: event.stage,
+                  at: event._creationTime,
+                  ...(event.expectedFrom !== undefined ? { expectedFrom: event.expectedFrom } : {}),
+                  ...(event.expectedTo !== undefined ? { expectedTo: event.expectedTo } : {}),
+                  ...(event.note !== undefined ? { note: event.note } : {}),
+                })),
+              },
+            }
+          : {}),
         refunds: (await refundsOnOrder(ctx, order)).map((refund) => ({
           amount: refund.amount,
           reason: refund.kind,

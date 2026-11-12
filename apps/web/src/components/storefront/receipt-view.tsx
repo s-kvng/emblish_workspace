@@ -98,7 +98,11 @@ export default function ReceiptView({
         {receipt.orders.map((order) => (
           <section key={order.reference}>
             <Rule />
-            <p className="font-semibold">STORE ORDER {order.reference}</p>
+            <p className="font-semibold">
+              {order.kind === "preorder"
+                ? `PRE-ORDER ${order.reference} · ITEM PAYMENT`
+                : `STORE ORDER ${order.reference}`}
+            </p>
             <ul className="mt-1 space-y-1">
               {order.lines.map((line) => (
                 <li key={`${line.productName}-${line.variantLabel}`}>
@@ -120,13 +124,24 @@ export default function ReceiptView({
               <div className="mt-1 flex justify-between gap-3">
                 <span>Delivery Fee</span>
                 <span>
-                  {order.fulfilment.deliveryFee === undefined
-                    ? "quoted by SMS"
-                    : ghs(order.fulfilment.deliveryFee)}
+                  {order.kind === "preorder"
+                    ? "billed on arrival"
+                    : order.fulfilment.deliveryFee === undefined
+                      ? "quoted by SMS"
+                      : ghs(order.fulfilment.deliveryFee)}
                 </span>
               </div>
             )}
-            {order.fulfilment.method === "pickup" && (
+            <div className="mt-1 flex justify-between gap-3 font-semibold">
+              <span>{order.kind === "preorder" ? "Item Payment" : "Order total"}</span>
+              <span>{ghs(order.amount)}</span>
+            </div>
+            {order.kind === "preorder" && (
+              <p className="mt-1 text-muted-foreground">
+                Awaiting arrival. We text you when it lands.
+              </p>
+            )}
+            {order.pickupCode && (
               <div className="mt-3 rounded border-2 border-brand-purple border-dashed py-2 text-center">
                 <p className="text-[11px] text-muted-foreground uppercase">Pickup Code</p>
                 <p className="font-bold text-2xl text-brand-purple tracking-[0.3em]">
@@ -145,7 +160,7 @@ export default function ReceiptView({
           <p className="mt-2">
             {receipt.orders.length === 0
               ? "We couldn't fill an order with this payment."
-              : "Part of this order sold out before the payment came through."}{" "}
+              : "Part of this payment couldn't be filled before it came through."}{" "}
             {cedi(receipt.toRefund)} will be refunded to you.
           </p>
         )}
@@ -155,7 +170,7 @@ export default function ReceiptView({
         </dl>
         <Rule />
         <p className="text-center text-muted-foreground">
-          {receipt.orders.length > 0 && (
+          {receipt.orders.some((order) => order.kind === "store") && (
             <>
               {fulfilment.method === "pickup"
                 ? "Show your Pickup Code when you collect."

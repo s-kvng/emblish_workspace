@@ -16,7 +16,7 @@ import { authClient } from "@/lib/auth-client";
 import { cedi } from "@/lib/money";
 
 type Card = FunctionReturnType<typeof api.storefront.orders.mine>[number];
-type Filter = "all" | "store" | "past";
+type Filter = "all" | "preorder" | "store" | "past";
 
 /** How each order status reads to a Customer. */
 const statusLabel: Record<OrderStatus, string> = {
@@ -65,6 +65,43 @@ function statusText(card: Card) {
   return statusLabel[card.status];
 }
 
+type WindowStage = NonNullable<Card["window"]>["stage"];
+type StageEvent = NonNullable<Card["window"]>["timeline"][number];
+
+/** The Order Window stages a Customer sees, in order; a draft is never shown. */
+const windowStages = ["open", "closed", "orderedFromSupplier", "inTransit", "arrived"] as const;
+
+const windowStageLabel: Record<WindowStage, string> = {
+  draft: "Draft",
+  open: "Open for Pre-orders",
+  closed: "Closed",
+  orderedFromSupplier: "Ordered from supplier",
+  inTransit: "In transit",
+  arrived: "Arrived",
+};
+
+/** "2 Dec – 9 Dec", or undefined when the stage gave no dates. */
+function rangeText(event: Pick<StageEvent, "expectedFrom" | "expectedTo"> | undefined) {
+  if (event?.expectedFrom === undefined || event.expectedTo === undefined) return undefined;
+  return `${day(event.expectedFrom)} – ${day(event.expectedTo)}`;
+}
+
+function expectedText(event: Pick<StageEvent, "expectedFrom" | "expectedTo"> | undefined) {
+  const range = rangeText(event);
+  return range ? `Expected ${range}` : undefined;
+}
+
+/**
+ * The card's stage line: "In transit · next: Arrived, 2 Dec – 9 Dec". The expected arrival is
+ * the latest Staff gave, which stands until they give a new one.
+ */
+function stageLine(window: NonNullable<Card["window"]>) {
+  const label = windowStageLabel[window.stage];
+  if (window.stage === "arrived") return label;
+  const range = rangeText(window.timeline.findLast((event) => event.expectedTo !== undefined));
+  return range ? `${label} · next: Arrived, ${range}` : label;
+}
+
 function day(at: number) {
   return new Date(at).toLocaleDateString("en-GH", { day: "numeric", month: "short" });
 }
@@ -96,12 +133,21 @@ export default function MyOrdersView() {
   const shown =
     filter === "past"
       ? past
-      : filter === "store"
-        ? active.filter((card) => card.kind === "store")
-        : active;
+      : filter === "all"
+        ? active
+        : active.filter((card) => card.kind === filter);
   const chips: { key: Filter; label: string; count: number }[] = [
     { key: "all", label: "All", count: cards?.length ?? 0 },
-    { key: "store", label: "Store Orders", count: active.filter((c) => c.kind === "store").length },
+    {
+      key: "preorder",
+      label: "Pre-orders",
+      count: active.filter((c) => c.kind === "preorder").length,
+    },
+    {
+      key: "store",
+      label: "Store Orders",
+      count: active.filter((c) => c.kind === "store").length,
+    },
     { key: "past", label: "Past", count: past.length },
   ];
 
@@ -194,28 +240,53 @@ export default function MyOrdersView() {
   );
 }
 
+/** A Pre-order's tracker dots: its window's stages from Closed, then Ready. "Open" isn't a dot. */
+const preorderDots = ["Closed", "Ordered", "In transit", "Arrived", "Ready"];
+const preorderDotsReached: Record<WindowStage, number> = {
+  draft: 0,
+  open: 0,
+  closed: 1,
+  orderedFromSupplier: 2,
+  inTransit: 3,
+  arrived: 4,
+};
+
+/** How many of a Pre-order's dots it has reached. */
+function preorderReached(card: Card) {
+  if (card.status === "awaitingArrival") {
+    return card.window ? preorderDotsReached[card.window.stage] : 0;
+  }
+  return card.status === "paymentDue" ? 4 : preorderDots.length;
+}
+
 /**
  * The horizontal dot tracker. Store Orders: Paid → Ready → Collected, or for Delivery
- * Paid → Ready → Out for delivery → Delivered.
+ * Paid → Ready → Out for delivery → Delivered. Pre-orders: Closed → Ordered → In transit →
+ * Arrived → Ready.
  */
 function Tracker({ card }: { card: Card }) {
   const ended = card.status === "cancelled" || card.status === "forfeited";
   const delivery = card.fulfilment.method === "delivery";
-  const dots = delivery
-    ? ["Paid", "Ready", "Out for delivery", "Delivered"]
-    : ["Paid", "Ready", "Collected"];
+  const preorder = card.kind === "preorder";
+  const dots = preorder
+    ? preorderDots
+    : ["Paid", "Ready", ...(delivery ? ["Out for delivery", "Delivered"] : ["Collected"])];
+  const ready = dots.indexOf("Ready") + 1;
   const reached = ended
     ? 0
-    : card.status === "collected" || card.status === "delivered"
-      ? dots.length
-      : card.status === "dispatched"
-        ? 3
-        : card.status === "ready"
-          ? 2
-          : 1;
+    : preorder
+      ? preorderReached(card)
+      : card.status === "collected" || card.status === "delivered"
+        ? dots.length
+        : card.status === "dispatched"
+          ? ready + 1
+          : card.status === "ready"
+            ? ready
+            : 1;
+  const columns = ["", "", "", "grid-cols-3", "grid-cols-4", "grid-cols-5"][dots.length];
   return (
     <div>
-      <ol className={`grid ${delivery ? "grid-cols-4" : "grid-cols-3"}`} aria-label="Progress">
+      <ol className={`grid ${columns}`} aria-label="Progress">
         {dots.map((dot, i) => {
           const done = i < reached;
           const current = i === reached - 1;
@@ -307,7 +378,8 @@ function OrderCard({
                 )}
               </p>
               <p className="text-muted-foreground text-xs">
-                {card.reference} · Store Order · {units} {units === 1 ? "item" : "items"}
+                {card.reference} · {card.kind === "preorder" ? "Pre-order" : "Store Order"} ·{" "}
+                {units} {units === 1 ? "item" : "items"}
               </p>
             </div>
             <ChevronDown
@@ -315,6 +387,11 @@ function OrderCard({
             />
           </div>
           <Tracker card={card} />
+          {card.window && card.status === "awaitingArrival" && (
+            <p className="-mt-2 text-muted-foreground text-xs">
+              W{card.window.number} · {stageLine(card.window)}
+            </p>
+          )}
         </div>
       </button>
 
@@ -377,6 +454,8 @@ function CardDetail({ card }: { card: Card }) {
           )}
         </div>
       )}
+
+      {card.window && <WindowTimeline window={card.window} />}
 
       <Section title="Items">
         <ul className="grid gap-1 text-sm">
@@ -465,5 +544,51 @@ function CardDetail({ card }: { card: Card }) {
         </ol>
       </Section>
     </div>
+  );
+}
+
+/** The Order Window's stages, each with its date, expected range and Staff note. */
+function WindowTimeline({ window }: { window: NonNullable<Card["window"]> }) {
+  const reached = windowStages.indexOf(window.stage as (typeof windowStages)[number]);
+  return (
+    <Section title={`Order Window W${window.number}`}>
+      <ol className="grid">
+        {windowStages.map((stage, i) => {
+          const event = window.timeline.findLast((e) => e.stage === stage);
+          const done = i <= reached;
+          const expected = expectedText(event);
+          return (
+            <li
+              key={stage}
+              className="relative flex gap-3 pb-3 last:pb-0"
+              aria-current={i === reached ? "step" : undefined}
+            >
+              {i < windowStages.length - 1 && (
+                <span
+                  className={`absolute top-4 left-[7px] h-full w-0.5 ${i < reached ? "bg-brand-purple" : "bg-border"}`}
+                />
+              )}
+              <span
+                className={`relative mt-0.5 grid size-4 shrink-0 place-items-center rounded-full border-2 ${
+                  done ? "border-brand-purple bg-brand-purple" : "border-border bg-card"
+                } ${i === reached && stage !== "arrived" ? "ring-4 ring-brand-gold/40" : ""}`}
+              >
+                {done && <Check className="size-2.5 text-white" strokeWidth={4} />}
+              </span>
+              <div className="text-sm">
+                <p className={done ? "font-semibold" : "text-muted-foreground"}>
+                  {windowStageLabel[stage]}
+                  {event && (
+                    <span className="font-normal text-muted-foreground"> · {day(event.at)}</span>
+                  )}
+                </p>
+                {expected && <p className="text-xs">{expected}</p>}
+                {event?.note && <p className="text-muted-foreground text-xs">{event.note}</p>}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </Section>
   );
 }
