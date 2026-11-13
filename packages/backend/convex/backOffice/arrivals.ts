@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { mutation, query } from "../_generated/server";
 import { requireStaff } from "../lib/guards";
 import { describeAllocation, lockArrival, recordLateArrival } from "../model/arrivals";
+import { invoiceProgress } from "../model/invoices";
 import { getWindow } from "../model/orderWindows";
 import { getProduct, inOptionOrder, listVariants } from "../model/products";
 import { listWindowVariants } from "../model/windowLookups";
@@ -29,6 +30,18 @@ export const toDo = query({
       arrived: v.optional(v.number()),
       /** When the window was last moved on a stage. */
       at: v.number(),
+      /**
+       * Arrived windows only: whether its Shipping Fee Invoices are issued ("Confirm fee & issue
+       * invoices" until they are), how many there are and are paid, and pesewas still unpaid.
+       */
+      invoices: v.optional(
+        v.object({
+          issued: v.boolean(),
+          count: v.number(),
+          paid: v.number(),
+          outstanding: v.number(),
+        }),
+      ),
     }),
   ),
   handler: async (ctx) => {
@@ -59,6 +72,7 @@ export const toDo = query({
           ...(stage === "arrived"
             ? {
                 arrived: variants.reduce((sum, row) => sum + (row.arrivedUnits ?? 0), 0),
+                invoices: await invoiceProgress(ctx, window),
               }
             : {}),
           at: event?._creationTime ?? window._creationTime,

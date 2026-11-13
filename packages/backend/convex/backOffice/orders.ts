@@ -4,6 +4,7 @@ import type { Doc } from "../_generated/dataModel";
 import { mutation, query } from "../_generated/server";
 import { requireOwner, requireStaff } from "../lib/guards";
 import { fulfilmentAsShown, shownFulfilment } from "../model/fulfilment";
+import { invoicesOnOrder } from "../model/invoices";
 import {
   alsoReady,
   customerContact,
@@ -34,6 +35,8 @@ import { pickupLocation } from "../model/settings";
 import {
   cancelReason,
   deliveryFailureReason,
+  invoiceKind,
+  invoiceStatus,
   orderEventKind,
   orderKind,
   orderStatus,
@@ -233,6 +236,18 @@ export const get = query({
         seevReference: v.string(),
       }),
     ),
+    /** Shipping Fee and Delivery Fee Invoices, oldest first. */
+    invoices: v.array(
+      v.object({
+        kind: invoiceKind,
+        number: v.string(),
+        code: v.string(),
+        status: invoiceStatus,
+        total: v.number(),
+        dueAt: v.number(),
+        paidAt: v.optional(v.number()),
+      }),
+    ),
     /** Pesewas flagged for refund from this order's payment and not yet refunded. */
     toRefund: v.number(),
     /** On a cancelled Pre-order: whether the Customer or Staff cancelled it. */
@@ -278,7 +293,21 @@ export const get = query({
     if (!order || !customer) {
       throw new ConvexError({ code: "NOT_FOUND", message: "That order doesn't exist." });
     }
-    const payment = await ctx.db.get(order.paymentId);
+    const invoices = await invoicesOnOrder(ctx, order._id);
+    // The Item Payment, then each paid invoice's payment.
+    const payments = [];
+    for (const paymentId of [order.paymentId, ...invoices.flatMap((i) => i.paymentId ?? [])]) {
+      const payment = await ctx.db.get(paymentId);
+      if (payment) {
+        payments.push({
+          receiptNumber: payment.receiptNumber,
+          receiptCode: payment.receiptCode,
+          amount: payment.amount,
+          paidAt: payment.paidAt,
+          seevReference: payment.seevReference,
+        });
+      }
+    }
     return {
       orderId: order._id,
       kind: order.kind,
@@ -290,17 +319,16 @@ export const get = query({
       pickupLocation: await pickupLocation(ctx),
       pickupCode: order.pickupCode,
       lines: await orderLines(ctx, order._id),
-      payments: payment
-        ? [
-            {
-              receiptNumber: payment.receiptNumber,
-              receiptCode: payment.receiptCode,
-              amount: payment.amount,
-              paidAt: payment.paidAt,
-              seevReference: payment.seevReference,
-            },
-          ]
-        : [],
+      payments,
+      invoices: invoices.map(({ kind, number, code, status, total, dueAt, paidAt }) => ({
+        kind,
+        number,
+        code,
+        status,
+        total,
+        dueAt,
+        ...(paidAt !== undefined ? { paidAt } : {}),
+      })),
       toRefund: await owedBack(ctx, order),
       ...(order.cancelReason ? { cancelReason: order.cancelReason } : {}),
       canCancelUnits: cancellable(order),

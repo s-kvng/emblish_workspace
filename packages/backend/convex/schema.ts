@@ -74,6 +74,9 @@ export const smsTemplate = v.union(
   v.literal("stageNewDates"),
   v.literal("arrived"),
   v.literal("arrivedNone"),
+  v.literal("shippingFeeInvoice"),
+  v.literal("readyForPickup"),
+  v.literal("invoicePaid"),
 );
 /** A Checkout's life: `pending` while it awaits payment, then paid, or expired / released unpaid. */
 export const checkoutStatus = v.union(
@@ -172,6 +175,9 @@ export const orderEventKind = v.union(
   v.literal("arrived"),
   v.literal("refundFlagged"),
   v.literal("refunded"),
+  v.literal("invoiced"),
+  v.literal("invoicePaid"),
+  v.literal("ready"),
 );
 /**
  * Who did something to an order: a Staff member, the Customer (cancelling their own Pre-order),
@@ -212,6 +218,20 @@ export const refundLine = v.object({
   orderLineId: v.id("orderLines"),
   quantity: v.number(),
 });
+/** What an invoice asks for: a Shipping Fee Invoice, or a Delivery Fee Invoice on its own. */
+export const invoiceKind = v.union(v.literal("shippingFee"), v.literal("deliveryFee"));
+export const invoiceStatus = v.union(v.literal("unpaid"), v.literal("paid"), v.literal("void"));
+/** One row of an invoice: arrived units × the confirmed per-unit fee, or a Delivery Fee. */
+export const invoiceLine = v.union(
+  v.object({
+    kind: v.literal("shippingFee"),
+    units: v.number(),
+    /** Integer pesewas per arrived unit. */
+    unitFee: v.number(),
+    amount: v.number(),
+  }),
+  v.object({ kind: v.literal("deliveryFee"), zoneName: v.string(), amount: v.number() }),
+);
 const invitationStatus = v.union(
   v.literal("pending"),
   v.literal("accepted"),
@@ -337,6 +357,12 @@ export default defineSchema({
     minimumOrderQuantity: v.optional(v.number()),
     /** Integer pesewas per unit, shown to Customers as an estimate. */
     shippingFeeEstimate: v.optional(v.number()),
+    /** Integer pesewas per arrived unit, confirmed by Staff after the arrival. */
+    shippingFeeConfirmed: v.optional(v.number()),
+    /** Staff checked the supplier's bill for a fee more than 20% over the estimate. */
+    overEstimateAcknowledged: v.optional(v.boolean()),
+    /** When its Shipping Fee Invoices were issued; they're issued once, for the whole window. */
+    invoicesIssuedAt: v.optional(v.number()),
     /** The one `scheduler.runAt(closesAt)` auto-close job; Extend and Close now replace it. */
     closeJobId: v.optional(v.id("_scheduled_functions")),
     createdBy: v.id("staff"),
@@ -435,9 +461,12 @@ export default defineSchema({
   }).index("by_checkout", ["checkoutId"]),
 
   // One Seev Plus hosted-checkout session per Pay or retry (ADR 0003). Maps Seev's reference
-  // back to the Checkout and drives the polling; `settledAt` is set once it's verified paid.
+  // back to what it pays for (a Checkout, or an invoice paid at `/p/`) and drives the polling;
+  // `settledAt` is set once it's verified paid.
   paymentSessions: defineTable({
-    checkoutId: v.id("checkouts"),
+    /** Exactly one of `checkoutId` and `invoiceId` is set. */
+    checkoutId: v.optional(v.id("checkouts")),
+    invoiceId: v.optional(v.id("invoices")),
     reference: v.string(),
     checkoutUrl: v.string(),
     /** When Seev stops accepting payment on it. */
@@ -445,7 +474,8 @@ export default defineSchema({
     settledAt: v.optional(v.number()),
   })
     .index("by_reference", ["reference"])
-    .index("by_checkout", ["checkoutId"]),
+    .index("by_checkout", ["checkoutId"])
+    .index("by_invoice", ["invoiceId"]),
 
   // One row per verified Seev payment; a Receipt is a rendering of one.
   payments: defineTable({
@@ -454,7 +484,9 @@ export default defineSchema({
     amount: v.number(),
     paidAt: v.number(),
     customerId: v.id("customers"),
-    checkoutId: v.id("checkouts"),
+    /** Exactly one of `checkoutId` and `invoiceId` is set: what the payment was for. */
+    checkoutId: v.optional(v.id("checkouts")),
+    invoiceId: v.optional(v.id("invoices")),
     /** `R-0001`, shown on the Receipt. */
     receiptNumber: v.string(),
     /** 8 characters, the Receipt's public `/r/<code>`. */
@@ -463,7 +495,8 @@ export default defineSchema({
     .index("by_reference", ["seevReference"])
     .index("by_receiptCode", ["receiptCode"])
     .index("by_customer", ["customerId"])
-    .index("by_checkout", ["checkoutId"]),
+    .index("by_checkout", ["checkoutId"])
+    .index("by_invoice", ["invoiceId"]),
 
   // Pre-orders and Store Orders (ADR 0002).
   orders: defineTable({
@@ -557,6 +590,36 @@ export default defineSchema({
   })
     .index("by_status", ["status"])
     .index("by_payment", ["paymentId"]),
+
+  // A request to pay money not yet paid on an order, public at `/p/<code>`. Paying it in full
+  // writes a `payments` row (its Receipt); it never changes once paid.
+  invoices: defineTable({
+    kind: invoiceKind,
+    orderId: v.id("orders"),
+    /** `INV-0001`. */
+    number: v.string(),
+    /** 8 characters, the public `/p/<code>`; each reissue gets its own. */
+    code: v.string(),
+    lines: v.array(invoiceLine),
+    /** Integer pesewas: the lines added up. */
+    total: v.number(),
+    status: invoiceStatus,
+    /**
+     * The first issue date, copied forward on a reissue. The due date (+14 days), reminders
+     * and Forfeit eligibility count from it.
+     */
+    clockStartedAt: v.number(),
+    issuedBy: v.id("staff"),
+    /** Set once paid: the payment and when. */
+    paymentId: v.optional(v.id("payments")),
+    paidAt: v.optional(v.number()),
+    voidReason: v.optional(v.string()),
+    supersedesId: v.optional(v.id("invoices")),
+    supersededById: v.optional(v.id("invoices")),
+  })
+    .index("by_order", ["orderId"])
+    .index("by_code", ["code"])
+    .index("by_status_and_clock", ["status", "clockStartedAt"]),
 
   // One row per reference sequence (`S`, `R`, later `P` and `INV`), bumped where it's used.
   counters: defineTable({

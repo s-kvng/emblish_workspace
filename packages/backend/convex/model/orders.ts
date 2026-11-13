@@ -108,7 +108,7 @@ export function isPastOrder(order: Doc<"orders">) {
   return !(openOrderStatuses as readonly OrderStatus[]).includes(order.status);
 }
 
-/** Whether My orders puts it at the top: a Pickup Code to show now (an invoice to pay, later). */
+/** Whether its Pickup Code puts it at the top of My orders (so does an unpaid invoice). */
 export function customerNeedsToAct(order: Doc<"orders">) {
   return handOverable(order);
 }

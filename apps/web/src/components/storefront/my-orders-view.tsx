@@ -53,6 +53,9 @@ const eventLabel: Record<Card["history"][number]["kind"], string> = {
   arrived: "Arrived in Ghana",
   refundFlagged: "Refund agreed",
   refunded: "Refund sent",
+  invoiced: "Shipping Fee invoice sent",
+  invoicePaid: "Invoice paid",
+  ready: "Ready for you",
 };
 
 /**
@@ -77,6 +80,9 @@ function statusText(card: Card) {
           : "Cancelled";
     const refund = cancelRefundState(card);
     return refund ? `${by} · ${refund}` : by;
+  }
+  if (card.invoice) {
+    return card.invoice.kind === "shippingFee" ? "Shipping Fee due" : "Delivery Fee due";
   }
   if (card.fulfilment.method === "delivery") {
     if (card.status === "ready") return "Ready for delivery";
@@ -123,6 +129,15 @@ function stageLine(window: NonNullable<Card["window"]>) {
   if (window.stage === "arrived") return label;
   const range = rangeText(window.timeline.findLast((event) => event.expectedTo !== undefined));
   return range ? `${label} · next: Arrived, ${range}` : label;
+}
+
+/** "Pay GH₵ 18 · due 27 Nov · 14d left", or "… · overdue 3d". */
+function payText(invoice: NonNullable<Card["invoice"]>) {
+  const days =
+    Math.floor(invoice.dueAt / (24 * 60 * 60 * 1000)) -
+    Math.floor(Date.now() / (24 * 60 * 60 * 1000));
+  const left = days >= 0 ? `${days}d left` : `overdue ${-days}d`;
+  return `Pay ${cedi(invoice.total)} · due ${day(invoice.dueAt)} · ${left}`;
 }
 
 function day(at: number) {
@@ -418,6 +433,16 @@ function OrderCard({
         </div>
       </button>
 
+      {card.invoice && (
+        <div className="px-4 pb-3">
+          <Link
+            href={`/p/${card.invoice.code}` as Route}
+            className="flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-brand-gold px-3 py-2 text-center font-semibold text-brand-purple-deep text-sm"
+          >
+            {payText(card.invoice)}
+          </Link>
+        </div>
+      )}
       {card.pickupCode && !open && (
         <div className="px-4 pb-3">
           <button

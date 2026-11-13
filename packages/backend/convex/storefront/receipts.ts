@@ -3,7 +3,7 @@ import { v } from "convex/values";
 import { query } from "../_generated/server";
 import { deliveryFeeToday, fulfilmentAsShown, shownFulfilment } from "../model/fulfilment";
 import { pickupLocation } from "../model/settings";
-import { orderKind, orderStatus } from "../schema";
+import { invoiceKind, invoiceLine, orderKind, orderStatus } from "../schema";
 
 /**
  * A Receipt by its `/r/` code: public to whoever holds the link, like the SMS that carries
@@ -46,6 +46,15 @@ export const get = query({
       ),
       /** Pesewas of this payment Stock couldn't fill, waiting to be refunded. */
       toRefund: v.number(),
+      /** Set when the payment paid an invoice at `/p/`, rather than a Checkout. */
+      invoice: v.optional(
+        v.object({
+          number: v.string(),
+          kind: invoiceKind,
+          orderReference: v.string(),
+          lines: v.array(invoiceLine),
+        }),
+      ),
     }),
   ),
   handler: async (ctx, { code }) => {
@@ -89,6 +98,8 @@ export const get = query({
       .query("refunds")
       .withIndex("by_payment", (q) => q.eq("paymentId", payment._id))
       .collect();
+    const invoice = payment.invoiceId ? await ctx.db.get(payment.invoiceId) : null;
+    const invoiceOrder = invoice && (await ctx.db.get(invoice.orderId));
     return {
       receiptNumber: payment.receiptNumber,
       paidAt: payment.paidAt,
@@ -101,6 +112,16 @@ export const get = query({
       toRefund: refunds
         .filter((refund) => refund.status !== "refunded")
         .reduce((sum, refund) => sum + refund.amount, 0),
+      ...(invoice && invoiceOrder
+        ? {
+            invoice: {
+              number: invoice.number,
+              kind: invoice.kind,
+              orderReference: invoiceOrder.reference,
+              lines: invoice.lines,
+            },
+          }
+        : {}),
     };
   },
 });

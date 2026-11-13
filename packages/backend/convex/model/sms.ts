@@ -21,11 +21,17 @@ export function orderReferences(references: string[]) {
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+/** A day in Ghana time (GMT), as SMS copy writes dates: "14 Nov". */
+export function dayMonth(at: number) {
+  const d = new Date(at);
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
+}
+
 /** An expected arrival range in Ghana time (GMT): "2 to 9 Dec", "28 Nov to 5 Dec" or "9 Dec". */
 export function expectedRange(from: number, to: number) {
   const a = new Date(from);
   const b = new Date(to);
-  const day = (d: Date) => `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
+  const day = (d: Date) => dayMonth(d.getTime());
   if (a.getUTCFullYear() === b.getUTCFullYear() && a.getUTCMonth() === b.getUTCMonth()) {
     return a.getUTCDate() === b.getUTCDate() ? day(b) : `${a.getUTCDate()} to ${day(b)}`;
   }
@@ -74,6 +80,11 @@ type ArrivedSmsArgs = {
 
 function units(count: number) {
   return count === 1 ? "unit" : "units";
+}
+
+/** The store's `{location}` setting as SMS copy carries it: at most 50 characters, no full stop. */
+function location(text: string) {
+  return smsSafe(text, 50).replace(/\.+$/, "");
 }
 
 /**
@@ -271,6 +282,78 @@ export const smsTemplates = {
       refund: 1350000,
       ordersUrl: "https://emblish.com/orders",
     },
+  }),
+  // #19 row 4: a Shipping Fee Invoice was issued, with any Delivery Fee on it.
+  shippingFeeInvoice: template<{
+    reference: string;
+    units: number;
+    /** Pesewas: arrived units × the confirmed fee. */
+    shipping: number;
+    /** Pesewas, when the Delivery Fee is on the invoice. */
+    deliveryFee?: number;
+    total: number;
+    /** From `dayMonth`. */
+    due: string;
+    payUrl: string;
+  }>({
+    render: ({ reference, units: count, shipping, deliveryFee, total, due, payUrl }) =>
+      `Shipping Fee for ${reference} (${count} ${units(count)}): ${ghs(shipping)}` +
+      (deliveryFee ? ` + delivery ${ghs(deliveryFee)} = ${ghs(total)}` : "") +
+      `. Due ${due}. Pay: ${payUrl}`,
+    example: {
+      reference: "P-1042",
+      units: 3,
+      shipping: 9000,
+      deliveryFee: 3000,
+      total: 12000,
+      due: "14 Nov",
+      payUrl: "https://emblish.com/p/K7Q2M9XA",
+    },
+  }),
+  // #19 row 8: Ready for Pickup without a payment, such as a GHS 0 Shipping Fee.
+  readyForPickup: template<{
+    reference: string;
+    pickupCode: string;
+    location: string;
+    ordersUrl: string;
+  }>({
+    render: ({ reference, pickupCode, location: where, ordersUrl }) =>
+      `${reference} is ready for pickup. Pickup code: ${pickupCode}. ${location(where)}. ${ordersUrl}`,
+    example: {
+      reference: "P-1042",
+      pickupCode: "482913",
+      location: "Osu, Oxford Street, opposite the Shell. Mon-Sat 9am-6pm",
+      ordersUrl: "https://emblish.com/orders",
+    },
+    redact: (body) => body.replace(/Pickup code: \d{6}/, "Pickup code: ******"),
+  }),
+  // #19 row 1, for a paid invoice: the Pickup Code when it makes the order Ready for Pickup.
+  invoicePaid: template<{
+    amount: number;
+    reference: string;
+    receiptUrl: string;
+    /** Set when the payment made the order Ready for Pickup. */
+    pickup?: { code: string; location: string };
+    /** Set when the payment made a Delivery order ready to go out. */
+    delivering?: boolean;
+  }>({
+    render: ({ amount, reference, receiptUrl, pickup, delivering }) =>
+      `Payment of ${ghs(amount)} received for ${reference}.` +
+      (pickup
+        ? ` Pickup code for ${reference}: ${pickup.code}. ${location(pickup.location)}.`
+        : "") +
+      (delivering ? " We will text you when it is on its way." : "") +
+      ` Receipt: ${receiptUrl}`,
+    example: {
+      amount: 12000,
+      reference: "P-1042",
+      receiptUrl: "https://emblish.com/r/K7Q2M9XA",
+      pickup: {
+        code: "482913",
+        location: "Osu, Oxford Street, opposite the Shell. Mon-Sat 9am-6pm",
+      },
+    },
+    redact: (body) => body.replace(/(Pickup code for \S+): \d{6}/, "$1: ******"),
   }),
   // A late charge Stock couldn't fill at all: nothing to pick up, all of it refunded.
   paymentNotFilled: template({

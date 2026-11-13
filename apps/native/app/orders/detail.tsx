@@ -35,7 +35,12 @@ const eventLabel = {
   arrived: "Arrived",
   refundFlagged: "Refund flagged",
   refunded: "Refunded",
+  invoiced: "Shipping Fee invoiced",
+  invoicePaid: "Invoice paid",
+  ready: "Ready",
 } as const;
+
+const invoiceStatusLabel = { unpaid: "Unpaid", paid: "Paid", void: "Void" } as const;
 
 type Order = FunctionReturnType<typeof api.backOffice.orders.get>;
 
@@ -172,6 +177,32 @@ export default function OrderDetailScreen() {
               </View>
             ))}
           </Section>
+
+          {order.invoices.length > 0 ? (
+            <Section title="Invoices">
+              {order.invoices.map((invoice) => (
+                <View key={invoice.number} className="py-1">
+                  <View className="flex-row justify-between">
+                    <Text
+                      className={`font-sans-medium text-foreground ${invoice.status === "void" ? "line-through" : ""}`}
+                    >
+                      {invoice.number} ·{" "}
+                      {invoice.kind === "shippingFee" ? "Shipping Fee" : "Delivery Fee"}
+                    </Text>
+                    <Text className="font-sans-medium text-foreground">
+                      {formatGhs(invoice.total)}
+                    </Text>
+                  </View>
+                  <Text className="font-sans text-muted text-xs">
+                    {invoiceStatusLabel[invoice.status]} ·{" "}
+                    {invoice.paidAt !== undefined
+                      ? `paid ${new Date(invoice.paidAt).toLocaleDateString("en-GH")}`
+                      : `due ${new Date(invoice.dueAt).toLocaleDateString("en-GH")}`}
+                  </Text>
+                </View>
+              ))}
+            </Section>
+          ) : null}
 
           <OrderActions order={order} />
 
