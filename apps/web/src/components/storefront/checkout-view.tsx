@@ -6,7 +6,6 @@ import { Button } from "@emblish_workspace/ui/components/button";
 import { Input } from "@emblish_workspace/ui/components/input";
 import { Label } from "@emblish_workspace/ui/components/label";
 import { useAction, useConvexAuth, useMutation, useQuery } from "convex/react";
-import { ConvexError } from "convex/values";
 import { ArrowLeft, Clock, MapPin, Truck } from "lucide-react";
 import type { Route } from "next";
 import Link from "next/link";
@@ -15,6 +14,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { useBag } from "@/lib/bag";
+import { messageOf } from "@/lib/convex-errors";
 import { cedi } from "@/lib/money";
 
 import ProductPhoto from "./product-photo";
@@ -47,13 +47,6 @@ const emptyAddress: Address = {
   landmark: "",
   ghanaPostGps: "",
 };
-
-/** The message a refused Convex call carries, or a fallback. */
-function messageOf(error: unknown, fallback: string) {
-  return error instanceof ConvexError && typeof error.data?.message === "string"
-    ? (error.data.message as string)
-    : fallback;
-}
 
 export default function CheckoutView({
   initialStep,

@@ -2,8 +2,9 @@ import { ConvexError, type Infer } from "convex/values";
 
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
-import type { refundKind, refundLine, refundMethod } from "../schema";
+import { type refundKind, type refundLine, type refundMethod, windowStages } from "../schema";
 import { recordMovement } from "./stock";
+import { windowRowFor } from "./windowLookups";
 
 export type RefundKind = Infer<typeof refundKind>;
 export type RefundMethod = Infer<typeof refundMethod>;
@@ -165,6 +166,115 @@ export async function cancelUnits(
       actor: { kind: "staff", staffId: actor._id },
     });
   }
+}
+
+/** Whether the Pre-order is still awaiting arrival, whatever its window's stage. */
+function awaitingArrival(order: Doc<"orders">) {
+  return order.kind === "preorder" && order.status === "awaitingArrival";
+}
+
+/**
+ * Whether Staff can cancel the Pre-order: it's awaiting arrival and its window hasn't arrived.
+ * Once the arrival is locked its units are allocated, so cancelling would have to release them.
+ */
+export async function preorderCancellable(ctx: Pick<QueryCtx, "db">, order: Doc<"orders">) {
+  if (!awaitingArrival(order)) return false;
+  const window = order.orderWindowId && (await ctx.db.get(order.orderWindowId));
+  return !window || window.stage !== "arrived";
+}
+
+/** Window stages before "Ordered from supplier", while a Customer may cancel on their own. */
+const selfCancelStages: readonly Doc<"orderWindows">["stage"][] = windowStages.slice(
+  0,
+  windowStages.indexOf("orderedFromSupplier"),
+);
+
+/**
+ * Whether the Customer may cancel the Pre-order themselves from My orders: free and immediate,
+ * until its window reaches "Ordered from supplier". After that only Staff can.
+ */
+export async function selfCancellable(ctx: Pick<QueryCtx, "db">, order: Doc<"orders">) {
+  if (!awaitingArrival(order) || !order.orderWindowId) return false;
+  const window = await ctx.db.get(order.orderWindowId);
+  return window !== null && selfCancelStages.includes(window.stage);
+}
+
+/** Who is cancelling a Pre-order. */
+export type PreorderCanceller =
+  | { kind: "customer"; customer: Doc<"customers"> }
+  | { kind: "staff"; staff: Doc<"staff"> };
+
+/**
+ * Cancels a whole Pre-order awaiting arrival: every unit still on it is cancelled, its window's
+ * `preordered` counts drop by them, and their price is flagged as a `cancelledPreorder` Refund
+ * on its Item Payment for the Owner to pay out. A Customer may only cancel their own, and only
+ * before the window reaches "Ordered from supplier"; Staff may cancel any awaiting arrival.
+ */
+export async function cancelPreorder(
+  ctx: Pick<MutationCtx, "db">,
+  by: PreorderCanceller,
+  { orderId, note }: { orderId: Id<"orders">; note?: string },
+) {
+  const order = await ctx.db.get(orderId);
+  if (!order || (by.kind === "customer" && order.customerId !== by.customer._id)) {
+    refuse("NOT_FOUND", "That order doesn't exist.");
+  }
+  if (!awaitingArrival(order)) {
+    refuse("NOT_CANCELLABLE", `${order.reference} can't be cancelled any more.`);
+  }
+  if (!(await preorderCancellable(ctx, order))) {
+    refuse("ARRIVED", `${order.reference} has arrived, so it can't be cancelled here.`);
+  }
+  if (by.kind === "customer" && !(await selfCancellable(ctx, order))) {
+    refuse(
+      "ORDERED_FROM_SUPPLIER",
+      "We've ordered this from the supplier, so it can't be cancelled here. Need to cancel? Contact us.",
+    );
+  }
+  const lines = (
+    await ctx.db
+      .query("orderLines")
+      .withIndex("by_order", (q) => q.eq("orderId", order._id))
+      .collect()
+  ).filter((line) => keptUnits(line) > 0);
+  const taken = await takeUnits(
+    ctx,
+    order,
+    lines.map((line) => ({ orderLineId: line._id, quantity: keptUnits(line) })),
+  );
+  if (order.orderWindowId) {
+    for (const { line, quantity } of taken.picked) {
+      const row = await windowRowFor(ctx, order.orderWindowId, line.variantId);
+      if (row) await ctx.db.patch(row._id, { preordered: Math.max(0, row.preordered - quantity) });
+    }
+  }
+  const reason = cleanNote(note);
+  const actor =
+    by.kind === "customer"
+      ? { kind: "customer" as const, customerId: by.customer._id }
+      : { kind: "staff" as const, staffId: by.staff._id };
+  if (taken.amount > 0) {
+    await ctx.db.insert("refunds", {
+      paymentId: order.paymentId,
+      orderId: order._id,
+      kind: "cancelledPreorder",
+      amount: taken.amount,
+      status: "toRefund",
+      returnToStock: false,
+      lines: taken.lines,
+      ...(by.kind === "staff" ? { flaggedBy: by.staff._id } : {}),
+      ...(reason ? { note: reason } : {}),
+    });
+  }
+  await ctx.db.patch(order._id, { status: "cancelled", cancelReason: by.kind });
+  await ctx.db.insert("orderEvents", {
+    orderId: order._id,
+    kind: "cancelled",
+    actor,
+    units: taken.units,
+    amount: taken.amount,
+    ...(reason ? { note: reason } : {}),
+  });
 }
 
 /** Statuses where the Customer has the goods. */

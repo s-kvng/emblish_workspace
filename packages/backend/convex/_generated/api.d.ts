@@ -9,6 +9,7 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as backOffice_arrivals from "../backOffice/arrivals.js";
 import type * as backOffice_categories from "../backOffice/categories.js";
 import type * as backOffice_deliveryZones from "../backOffice/deliveryZones.js";
 import type * as backOffice_invitation from "../backOffice/invitation.js";
@@ -23,6 +24,7 @@ import type * as healthCheck from "../healthCheck.js";
 import type * as http from "../http.js";
 import type * as lib_guards from "../lib/guards.js";
 import type * as model_arkesel from "../model/arkesel.js";
+import type * as model_arrivals from "../model/arrivals.js";
 import type * as model_authUsers from "../model/authUsers.js";
 import type * as model_catalog from "../model/catalog.js";
 import type * as model_categories from "../model/categories.js";
@@ -69,6 +71,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  "backOffice/arrivals": typeof backOffice_arrivals;
   "backOffice/categories": typeof backOffice_categories;
   "backOffice/deliveryZones": typeof backOffice_deliveryZones;
   "backOffice/invitation": typeof backOffice_invitation;
@@ -83,6 +86,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   "lib/guards": typeof lib_guards;
   "model/arkesel": typeof model_arkesel;
+  "model/arrivals": typeof model_arrivals;
   "model/authUsers": typeof model_authUsers;
   "model/catalog": typeof model_catalog;
   "model/categories": typeof model_categories;

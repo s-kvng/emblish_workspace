@@ -32,6 +32,7 @@ const eventLabel = {
   deliveryFailed: "Delivery failed",
   unitsCancelled: "Units cancelled",
   cancelled: "Order cancelled",
+  arrived: "Arrived",
   refundFlagged: "Refund flagged",
   refunded: "Refunded",
 } as const;
@@ -63,8 +64,17 @@ export default function OrderDetailScreen() {
       <ScrollView contentContainerClassName="grow">
         <ScreenHeader title={order.reference} backLabel="Back">
           <View className="mt-2 flex-row gap-2">
-            <Chip>Store Order</Chip>
-            <Chip>{orderStatusLabel[order.status]}</Chip>
+            <Chip>{order.kind === "preorder" ? "Pre-order" : "Store Order"}</Chip>
+            <Chip>
+              {orderStatusLabel[order.status]}
+              {order.cancelReason === "customer"
+                ? " by Customer"
+                : order.cancelReason === "staff"
+                  ? " by Staff"
+                  : order.cancelReason === "nothingArrived"
+                    ? " · nothing arrived"
+                    : ""}
+            </Chip>
           </View>
         </ScreenHeader>
         <View className="gap-4 p-4">
@@ -244,6 +254,19 @@ export default function OrderDetailScreen() {
 function OrderActions({ order }: { order: Order }) {
   const isOwner = useStaffMember()?.role === "owner";
   const [open, setOpen] = useState(false);
+  if (order.canCancelPreorder) {
+    return (
+      <Section title="Cancel Pre-order">
+        {open ? (
+          <CancelPreorderForm order={order} onDone={() => setOpen(false)} />
+        ) : (
+          <Button variant="secondary" onPress={() => setOpen(true)}>
+            <Button.Label>Cancel Pre-order</Button.Label>
+          </Button>
+        )}
+      </Section>
+    );
+  }
   if (order.canCancelUnits) {
     return (
       <Section title="Cancel units">
@@ -278,6 +301,58 @@ function OrderActions({ order }: { order: Order }) {
     );
   }
   return null;
+}
+
+/**
+ * Cancels the whole Pre-order, with an optional note: its units leave the window's count and its
+ * Item Payment goes on Refunds to make.
+ */
+function CancelPreorderForm({ order, onDone }: { order: Order; onDone: () => void }) {
+  const cancelPreorder = useMutation(api.backOffice.orders.cancelPreorder);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const amount = order.lines.reduce(
+    (sum, line) => sum + (line.quantity - line.refundedQuantity) * line.unitPrice,
+    0,
+  );
+
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await cancelPreorder({ orderId: order.orderId, note: note || undefined });
+      onDone();
+    } catch (refused) {
+      setError(refusalMessage(refused));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <View className="gap-3">
+      <Input
+        value={note}
+        onChangeText={setNote}
+        placeholder="Note (optional)"
+        accessibilityLabel="Note"
+      />
+      <Text className="font-sans text-muted text-xs">
+        Every unit leaves the window, and the Item Payment of {formatGhs(amount)} goes on Refunds
+        to make for an Owner to pay out.
+      </Text>
+      {error ? <Text className="font-sans-semibold text-danger text-sm">{error}</Text> : null}
+      <View className="flex-row gap-2">
+        <Button variant="secondary" className="flex-1" onPress={onDone} isDisabled={busy}>
+          <Button.Label>Back</Button.Label>
+        </Button>
+        <Button variant="danger" className="flex-1" onPress={submit} isDisabled={busy}>
+          <Button.Label>Cancel Pre-order</Button.Label>
+        </Button>
+      </View>
+    </View>
+  );
 }
 
 /**

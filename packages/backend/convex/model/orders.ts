@@ -284,7 +284,12 @@ export async function orderHistory(ctx: Pick<QueryCtx, "db">, orderId: Id<"order
     history.push({
       kind: event.kind,
       at: event._creationTime,
-      by: event.actor.kind === "system" ? "System" : (staff?.name ?? "Former Staff"),
+      by:
+        event.actor.kind === "system"
+          ? "System"
+          : event.actor.kind === "customer"
+            ? "Customer"
+            : (staff?.name ?? "Former Staff"),
       overrideReason: event.overrideReason,
       riderName: event.riderName,
       failureReason: event.failureReason,

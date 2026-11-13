@@ -72,6 +72,8 @@ export const smsTemplate = v.union(
   v.literal("stageOrdered"),
   v.literal("stageInTransit"),
   v.literal("stageNewDates"),
+  v.literal("arrived"),
+  v.literal("arrivedNone"),
 );
 /** A Checkout's life: `pending` while it awaits payment, then paid, or expired / released unpaid. */
 export const checkoutStatus = v.union(
@@ -167,13 +169,27 @@ export const orderEventKind = v.union(
   v.literal("deliveryFailed"),
   v.literal("unitsCancelled"),
   v.literal("cancelled"),
+  v.literal("arrived"),
   v.literal("refundFlagged"),
   v.literal("refunded"),
 );
-/** Who did something to an order: a Staff member, or the system (such as a verified payment). */
+/**
+ * Who did something to an order: a Staff member, the Customer (cancelling their own Pre-order),
+ * or the system (such as a verified payment).
+ */
 export const orderActor = v.union(
   v.object({ kind: v.literal("staff"), staffId: v.id("staff") }),
+  v.object({ kind: v.literal("customer"), customerId: v.id("customers") }),
   v.object({ kind: v.literal("system") }),
+);
+/**
+ * Why a Pre-order was cancelled: the Customer from My orders, Staff from order detail, or none
+ * of its units arrived.
+ */
+export const cancelReason = v.union(
+  v.literal("customer"),
+  v.literal("staff"),
+  v.literal("nothingArrived"),
 );
 export const refundKind = v.union(
   v.literal("shortfall"),
@@ -345,6 +361,8 @@ export default defineSchema({
      * supplier"; missing reads as 0.
      */
     storeQuantity: v.optional(v.number()),
+    /** Units that arrived, counted by Staff and locked with the arrival; missing until then. */
+    arrivedUnits: v.optional(v.number()),
   })
     .index("by_window", ["orderWindowId"])
     .index("by_variant", ["variantId"]),
@@ -383,7 +401,8 @@ export default defineSchema({
     staffId: v.optional(v.id("staff")),
     /** The order a Sold movement filled. */
     orderId: v.optional(v.id("orders")),
-    // Source refs (Order Window, Pre-order) are added with the tables they point at.
+    /** The Order Window an `arrival` or `lateArrival` came in with. */
+    orderWindowId: v.optional(v.id("orderWindows")),
   }).index("by_variant", ["variantId"]),
 
   // A submitted Bag awaiting one payment. Created at Pay with its Stock Holds; unpaid, it
@@ -465,6 +484,8 @@ export default defineSchema({
     pickupCode: v.string(),
     status: orderStatus,
     readyAt: v.optional(v.number()),
+    /** Set on a cancelled Pre-order: who cancelled it. */
+    cancelReason: v.optional(cancelReason),
   })
     .index("by_reference", ["reference"])
     .index("by_customer", ["customerId"])
@@ -483,6 +504,8 @@ export default defineSchema({
     quantity: v.number(),
     /** Units cancelled before handover or refunded after it; missing reads as 0. */
     refundedQuantity: v.optional(v.number()),
+    /** Pre-orders only: units its window's arrival filled, set when the arrival is locked. */
+    arrivedUnits: v.optional(v.number()),
   }).index("by_order", ["orderId"]),
 
   // Append-only: one row per order action, the audit trail and the order's History.
@@ -496,9 +519,12 @@ export default defineSchema({
     riderName: v.optional(v.string()),
     /** Set on `deliveryFailed`. */
     failureReason: v.optional(deliveryFailureReason),
-    /** Set on `unitsCancelled` and `refundFlagged`: how many units. */
+    /**
+     * Set on `unitsCancelled`, `refundFlagged`, a Pre-order's `cancelled` and `arrived`: how many
+     * units.
+     */
     units: v.optional(v.number()),
-    /** Pesewas, set on `unitsCancelled`, `refundFlagged` and `refunded`. */
+    /** Pesewas, set on `unitsCancelled`, `refundFlagged`, `refunded` and a Pre-order's `cancelled`. */
     amount: v.optional(v.number()),
     note: v.optional(v.string()),
   }).index("by_order", ["orderId"]),
