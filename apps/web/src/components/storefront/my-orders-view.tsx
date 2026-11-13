@@ -50,13 +50,18 @@ const eventLabel: Record<Card["history"][number]["kind"], string> = {
   deliveryFailed: "Delivery attempt missed",
   unitsCancelled: "Part of your order cancelled",
   cancelled: "Order cancelled",
+  arrived: "Arrived in Ghana",
   refundFlagged: "Refund agreed",
   refunded: "Refund sent",
 };
 
-/** "Refund pending" or "Refunded" for a cancelled Pre-order's Item Payment refund. */
+/**
+ * "Refund pending" or "Refunded" for a cancelled Pre-order's Item Payment refund: its
+ * cancellation, or the Shortfall when none of its units arrived.
+ */
 function cancelRefundState(card: Card) {
-  const refund = card.refunds.find((r) => r.reason === "cancelledPreorder");
+  const reason = card.cancelReason === "nothingArrived" ? "shortfall" : "cancelledPreorder";
+  const refund = card.refunds.find((r) => r.reason === reason);
   if (!refund) return undefined;
   return refund.refunded ? "Refunded" : "Refund pending";
 }
@@ -64,7 +69,12 @@ function cancelRefundState(card: Card) {
 /** The status line, worded for how the order reaches the Customer. */
 function statusText(card: Card) {
   if (card.status === "cancelled" && card.kind === "preorder") {
-    const by = card.cancelReason === "customer" ? "Cancelled by you" : "Cancelled";
+    const by =
+      card.cancelReason === "customer"
+        ? "Cancelled by you"
+        : card.cancelReason === "nothingArrived"
+          ? "Didn't arrive"
+          : "Cancelled";
     const refund = cancelRefundState(card);
     return refund ? `${by} · ${refund}` : by;
   }

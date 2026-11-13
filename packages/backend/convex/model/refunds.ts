@@ -168,9 +168,19 @@ export async function cancelUnits(
   }
 }
 
-/** Whether Staff can cancel the Pre-order: it's still awaiting arrival, whatever its window's stage. */
-export function preorderCancellable(order: Doc<"orders">) {
+/** Whether the Pre-order is still awaiting arrival, whatever its window's stage. */
+function awaitingArrival(order: Doc<"orders">) {
   return order.kind === "preorder" && order.status === "awaitingArrival";
+}
+
+/**
+ * Whether Staff can cancel the Pre-order: it's awaiting arrival and its window hasn't arrived.
+ * Once the arrival is locked its units are allocated, so cancelling would have to release them.
+ */
+export async function preorderCancellable(ctx: Pick<QueryCtx, "db">, order: Doc<"orders">) {
+  if (!awaitingArrival(order)) return false;
+  const window = order.orderWindowId && (await ctx.db.get(order.orderWindowId));
+  return !window || window.stage !== "arrived";
 }
 
 /** Window stages before "Ordered from supplier", while a Customer may cancel on their own. */
@@ -184,7 +194,7 @@ const selfCancelStages: readonly Doc<"orderWindows">["stage"][] = windowStages.s
  * until its window reaches "Ordered from supplier". After that only Staff can.
  */
 export async function selfCancellable(ctx: Pick<QueryCtx, "db">, order: Doc<"orders">) {
-  if (!preorderCancellable(order) || !order.orderWindowId) return false;
+  if (!awaitingArrival(order) || !order.orderWindowId) return false;
   const window = await ctx.db.get(order.orderWindowId);
   return window !== null && selfCancelStages.includes(window.stage);
 }
@@ -209,8 +219,11 @@ export async function cancelPreorder(
   if (!order || (by.kind === "customer" && order.customerId !== by.customer._id)) {
     refuse("NOT_FOUND", "That order doesn't exist.");
   }
-  if (!preorderCancellable(order)) {
+  if (!awaitingArrival(order)) {
     refuse("NOT_CANCELLABLE", `${order.reference} can't be cancelled any more.`);
+  }
+  if (!(await preorderCancellable(ctx, order))) {
+    refuse("ARRIVED", `${order.reference} has arrived, so it can't be cancelled here.`);
   }
   if (by.kind === "customer" && !(await selfCancellable(ctx, order))) {
     refuse(

@@ -59,6 +59,23 @@ type StageSmsArgs = {
   ordersUrl: string;
 };
 
+/** What the Arrived SMS say: one Customer's units across their Pre-orders in the window. */
+type ArrivedSmsArgs = {
+  references: string[];
+  productName: string;
+  /** Units the arrival filled. */
+  got: number;
+  /** Units they were waiting for. */
+  ordered: number;
+  /** Pesewas flagged as Shortfall Refunds; 0 when nothing was short. */
+  refund: number;
+  ordersUrl: string;
+};
+
+function units(count: number) {
+  return count === 1 ? "unit" : "units";
+}
+
 /**
  * Every SMS a Customer gets is rendered from one of these templates. They follow the
  * notification style rules: English, GSM-7 only (money as "GHS", never "₵"; no emoji,
@@ -211,6 +228,47 @@ export const smsTemplates = {
       references: ["P-1042", "P-1043", "P-1044"],
       productName: "Ankara Wrap Dress with a Very Long Name Indeed",
       expected: "28 Nov to 5 Dec",
+      ordersUrl: "https://emblish.com/orders",
+    },
+  }),
+  // The arrival was locked: one per Customer holding Pre-orders in the window, with their units.
+  arrived: template<ArrivedSmsArgs>({
+    render: ({ references, productName, got, ordered, refund, ordersUrl }) => {
+      const what = `${orderReferences(references)} (${smsSafe(productName, 24)})`;
+      const verb = references.length === 1 ? "has" : "have";
+      if (refund === 0) {
+        return (
+          `${what} ${verb} arrived in Ghana: ${got} of ${ordered} ${units(ordered)}. ` +
+          `Your Shipping Fee invoice will follow. ${ordersUrl}`
+        );
+      }
+      const missing = ordered - got;
+      return (
+        `${what} ${verb} arrived: ${got} of ${ordered} ${units(ordered)}. We will refund ` +
+        `${ghs(refund)} for the missing ${units(missing)}. Shipping Fee invoice to follow. ${ordersUrl}`
+      );
+    },
+    example: {
+      references: ["P-1042", "P-1043", "P-1044"],
+      productName: "Ankara Wrap Dress with a Very Long Name Indeed",
+      got: 12,
+      ordered: 15,
+      refund: 1350000,
+      ordersUrl: "https://emblish.com/orders",
+    },
+  }),
+  // The arrival was locked and none of the Customer's units came: their Pre-orders are cancelled.
+  arrivedNone: template<ArrivedSmsArgs>({
+    render: ({ references, productName, ordered, refund, ordersUrl }) =>
+      `${orderReferences(references)} (${smsSafe(productName, 24)}): sorry, ` +
+      (ordered === 1 ? "your unit did not arrive" : `none of your ${ordered} units arrived`) +
+      `. We will refund ${ghs(refund)}. ${ordersUrl}`,
+    example: {
+      references: ["P-1042", "P-1043", "P-1044"],
+      productName: "Ankara Wrap Dress with a Very Long Name Indeed",
+      got: 0,
+      ordered: 15,
+      refund: 1350000,
       ordersUrl: "https://emblish.com/orders",
     },
   }),

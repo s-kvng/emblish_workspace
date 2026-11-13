@@ -61,6 +61,18 @@ function StackLayout() {
             sheetGrabberVisible: true,
           }}
         />
+        <Stack.Screen
+          name="arrivals/record"
+          options={{ presentation: "fullScreenModal", gestureEnabled: false }}
+        />
+        <Stack.Screen
+          name="arrivals/late"
+          options={{
+            presentation: "formSheet",
+            sheetAllowedDetents: [0.7],
+            sheetGrabberVisible: true,
+          }}
+        />
         <Stack.Screen name="categories" />
         <Stack.Screen name="delivery-zones" />
         <Stack.Screen name="store-settings" />

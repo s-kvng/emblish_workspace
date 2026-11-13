@@ -181,6 +181,8 @@ function DraftCard({ window }: { window: OrderWindow }) {
 
 function Timeline({ window }: { window: OrderWindow }) {
   const current = timelineStages.indexOf(window.stage as (typeof timelineStages)[number]);
+  const openArrival = (pathname: "/arrivals/record" | "/arrivals/late") =>
+    router.push({ pathname, params: { windowId: window._id } });
   return (
     <View>
       {timelineStages.map((stage, index) => {
@@ -245,10 +247,36 @@ function Timeline({ window }: { window: OrderWindow }) {
                   </Button>
                 </View>
               ) : null}
-              {state === "next" && index === current + 1 && stage === "arrived" ? (
-                <Text className="mt-1 font-sans text-muted text-xs">
-                  Arrived is set when the arrival is recorded.
-                </Text>
+              {state === "next" && stage === "arrived" ? (
+                isMarkable(window.stage) ? (
+                  <View className="mt-2 gap-2 rounded-2xl border border-border border-dashed p-3">
+                    <Button variant="secondary" onPress={() => openArrival("/arrivals/record")}>
+                      <Button.Label>Record arrival</Button.Label>
+                    </Button>
+                  </View>
+                ) : (
+                  <Text className="mt-1 font-sans text-muted text-xs">
+                    Arrived is set when the arrival is recorded.
+                  </Text>
+                )
+              ) : null}
+              {state === "current" && stage === "arrived" ? (
+                <View className="mt-2 flex-row gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onPress={() => openArrival("/arrivals/record")}
+                  >
+                    <Button.Label>Who got what</Button.Label>
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onPress={() => openArrival("/arrivals/late")}
+                  >
+                    <Button.Label>Add late arrival</Button.Label>
+                  </Button>
+                </View>
               ) : null}
             </View>
           </View>

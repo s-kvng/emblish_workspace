@@ -304,7 +304,7 @@ export const get = query({
       toRefund: await owedBack(ctx, order),
       ...(order.cancelReason ? { cancelReason: order.cancelReason } : {}),
       canCancelUnits: cancellable(order),
-      canCancelPreorder: preorderCancellable(order),
+      canCancelPreorder: await preorderCancellable(ctx, order),
       canRefundAfterHandover: handedOver(order),
       refundableDeliveryFee: await refundableDeliveryFee(ctx, order),
       history: await orderHistory(ctx, order._id),

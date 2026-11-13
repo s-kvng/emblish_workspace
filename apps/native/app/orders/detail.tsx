@@ -32,6 +32,7 @@ const eventLabel = {
   deliveryFailed: "Delivery failed",
   unitsCancelled: "Units cancelled",
   cancelled: "Order cancelled",
+  arrived: "Arrived",
   refundFlagged: "Refund flagged",
   refunded: "Refunded",
 } as const;
@@ -70,7 +71,9 @@ export default function OrderDetailScreen() {
                 ? " by Customer"
                 : order.cancelReason === "staff"
                   ? " by Staff"
-                  : ""}
+                  : order.cancelReason === "nothingArrived"
+                    ? " · nothing arrived"
+                    : ""}
             </Chip>
           </View>
         </ScreenHeader>
