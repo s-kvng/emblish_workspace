@@ -4,7 +4,11 @@ import type { Doc } from "../_generated/dataModel";
 import { mutation, query } from "../_generated/server";
 import { requireOwner, requireStaff } from "../lib/guards";
 import { fulfilmentAsShown, shownFulfilment } from "../model/fulfilment";
-import { invoicesOnOrder } from "../model/invoices";
+import {
+  deliveryQuotable,
+  invoicesOnOrder,
+  quoteDeliveryFee as quoteOrderDeliveryFee,
+} from "../model/invoices";
 import {
   alsoReady,
   customerContact,
@@ -129,6 +133,25 @@ export const dispatch = mutation({
   handler: async (ctx, { orderId, riderName }) => {
     const staff = await requireStaff(ctx);
     await dispatchOrder(ctx, staff, orderId, riderName);
+    return null;
+  },
+});
+
+/**
+ * Any Staff member quotes an Elsewhere in Ghana Delivery Fee. It's billed on a Delivery Fee
+ * Invoice texted to the Customer, or, on a Pre-order not yet invoiced, on its coming Shipping
+ * Fee Invoice. The order can go out once every invoice on it is paid.
+ */
+export const quoteDeliveryFee = mutation({
+  args: {
+    orderId: v.id("orders"),
+    /** Integer pesewas. */
+    fee: v.number(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const staff = await requireStaff(ctx);
+    await quoteOrderDeliveryFee(ctx, staff, args);
     return null;
   },
 });
@@ -260,6 +283,8 @@ export const get = query({
     canRefundAfterHandover: v.boolean(),
     /** Pesewas of the paid Delivery Fee not yet flagged for refund. */
     refundableDeliveryFee: v.number(),
+    /** Elsewhere in Ghana with no fee yet: Staff can quote it. */
+    canQuoteDeliveryFee: v.boolean(),
     history: v.array(
       v.object({
         kind: orderEventKind,
@@ -335,6 +360,7 @@ export const get = query({
       canCancelPreorder: await preorderCancellable(ctx, order),
       canRefundAfterHandover: handedOver(order),
       refundableDeliveryFee: await refundableDeliveryFee(ctx, order),
+      canQuoteDeliveryFee: deliveryQuotable(order),
       history: await orderHistory(ctx, order._id),
       primaryAction: primaryAction(order),
     };

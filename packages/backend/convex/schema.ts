@@ -78,6 +78,7 @@ export const smsTemplate = v.union(
   v.literal("readyForPickup"),
   v.literal("invoicePaid"),
   v.literal("invoiceReplaced"),
+  v.literal("deliveryFeeInvoice"),
 );
 /** A Checkout's life: `pending` while it awaits payment, then paid, or expired / released unpaid. */
 export const checkoutStatus = v.union(
@@ -119,6 +120,11 @@ export const fulfilment = v.union(
     zoneName: v.string(),
     /** Integer pesewas per order, frozen at Checkout; missing for Elsewhere until quoted. */
     deliveryFee: v.optional(v.number()),
+    /**
+     * Elsewhere in Ghana: the integer pesewas Staff quoted after Checkout, billed on a Delivery
+     * Fee Invoice (or on the Shipping Fee Invoice, if that's not yet issued). Never paid at Checkout.
+     */
+    quotedFee: v.optional(v.number()),
     ...deliveryAddress,
   }),
 );
@@ -180,6 +186,7 @@ export const orderEventKind = v.union(
   v.literal("invoicePaid"),
   v.literal("invoiceReissued"),
   v.literal("ready"),
+  v.literal("deliveryQuoted"),
 );
 /**
  * Who did something to an order: a Staff member, the Customer (cancelling their own Pre-order),

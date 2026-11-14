@@ -272,6 +272,7 @@ export async function paidPreorder(
   customerId: Id<"customers">,
   orderWindowId: Id<"orderWindows">,
   lines: { variantId: Id<"variants">; quantity: number }[],
+  fulfilment: Fulfilment = { method: "pickup" },
 ) {
   return await t.run(async (ctx) => {
     const priced = [];
@@ -298,7 +299,7 @@ export async function paidPreorder(
     const checkoutId = await ctx.db.insert("checkouts", {
       customerId,
       lines: priced,
-      fulfilment: { method: "pickup" },
+      fulfilment,
       total,
       status: "pending",
       expiresAt: Date.now() + 30 * 60 * 1000,

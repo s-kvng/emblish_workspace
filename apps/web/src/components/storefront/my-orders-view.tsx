@@ -53,10 +53,11 @@ const eventLabel: Record<Card["history"][number]["kind"], string> = {
   arrived: "Arrived in Ghana",
   refundFlagged: "Refund agreed",
   refunded: "Refund sent",
-  invoiced: "Shipping Fee invoice sent",
+  invoiced: "Invoice sent",
   invoicePaid: "Invoice paid",
   invoiceReissued: "Invoice corrected",
   ready: "Ready for you",
+  deliveryQuoted: "Delivery Fee quoted",
 };
 
 /**

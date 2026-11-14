@@ -310,6 +310,25 @@ export const smsTemplates = {
       payUrl: "https://emblish.com/p/K7Q2M9XA",
     },
   }),
+  // Staff quoted an Elsewhere in Ghana Delivery Fee on its own Delivery Fee Invoice.
+  deliveryFeeInvoice: template<{
+    reference: string;
+    zoneName: string;
+    total: number;
+    /** From `dayMonth`. */
+    due: string;
+    payUrl: string;
+  }>({
+    render: ({ reference, zoneName, total, due, payUrl }) =>
+      `Delivery Fee for ${reference} to ${zoneName}: ${ghs(total)}. Due ${due}. Pay: ${payUrl}`,
+    example: {
+      reference: "S-0310",
+      zoneName: "Elsewhere in Ghana",
+      total: 4500,
+      due: "14 Nov",
+      payUrl: "https://emblish.com/p/K7Q2M9XA",
+    },
+  }),
   // #19 row 5: Void & reissue replaced the invoice; the due date is kept.
   invoiceReplaced: template<{
     reference: string;

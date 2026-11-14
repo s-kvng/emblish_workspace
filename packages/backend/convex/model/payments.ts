@@ -156,9 +156,9 @@ export async function settlePayment(
 /**
  * Settles a verified payment of an invoice paid at `/p/`. It always writes the `payments` row
  * (its Receipt). A full payment of an unpaid invoice marks it paid and makes the order Ready
- * (unless its Delivery Fee is still to be quoted), and the payment SMS carries the Pickup Code
- * when it's for Pickup. A payment of an invoice that's no longer unpaid, or of a different
- * amount, is all a Refund for an Owner to look at.
+ * once every invoice on it is paid (and no Delivery Fee is still to be quoted), and the payment
+ * SMS carries the Pickup Code when it's for Pickup. A payment of an invoice that's no longer
+ * unpaid, or of a different amount, is all a Refund for an Owner to look at.
  */
 async function settleInvoicePayment(
   ctx: Pick<MutationCtx, "db" | "scheduler">,
@@ -213,7 +213,15 @@ async function settleInvoicePayment(
     actor: { kind: "system" },
     amount,
   });
-  const ready = order.status === "paymentDue" && !awaitsDeliveryQuote(order.fulfilment);
+  // A Pre-order can owe a Shipping Fee Invoice and a Delivery Fee Invoice: both must be paid.
+  const othersUnpaid = (
+    await ctx.db
+      .query("invoices")
+      .withIndex("by_order", (q) => q.eq("orderId", order._id))
+      .collect()
+  ).some((other) => other._id !== invoice._id && other.status === "unpaid");
+  const ready =
+    order.status === "paymentDue" && !awaitsDeliveryQuote(order.fulfilment) && !othersUnpaid;
   if (ready) {
     await ctx.db.patch(order._id, { status: "ready", readyAt: now });
     await ctx.db.insert("orderEvents", { orderId: order._id, kind: "ready", actor: { kind: "system" } });

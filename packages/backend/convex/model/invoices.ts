@@ -4,7 +4,12 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { invoiceKind, invoiceLine, invoiceStatus } from "../schema";
 import { newInvoiceCode, nextReference } from "./codes";
-import { awaitsDeliveryQuote, fulfilmentAsShown, shownFulfilment } from "./fulfilment";
+import {
+  awaitsDeliveryQuote,
+  fulfilmentAsShown,
+  invoicedDeliveryFee,
+  shownFulfilment,
+} from "./fulfilment";
 import { getWindow } from "./orderWindows";
 import { pickupLocation } from "./settings";
 import { dayMonth, ordersUrl, queueSms, renderSms } from "./sms";
@@ -133,7 +138,7 @@ export async function previewInvoices(
       });
     }
     for (const order of issued ? orders : []) {
-      const invoice = await liveInvoice(ctx, order._id, "shippingFee");
+      const invoice = await windowInvoice(ctx, order._id);
       if (!invoice) continue;
       const shipping = invoice.lines.find((line) => line.kind === "shippingFee");
       const delivery = invoice.lines.find((line) => line.kind === "deliveryFee");
@@ -193,14 +198,21 @@ export async function liveInvoice(
 }
 
 /**
+ * The invoice an arrived Pre-order's window issued it, still in force: its Shipping Fee Invoice,
+ * or a Delivery Fee Invoice when there was no Shipping Fee to charge.
+ */
+async function windowInvoice(ctx: Pick<QueryCtx, "db">, orderId: Id<"orders">) {
+  return (
+    (await liveInvoice(ctx, orderId, "shippingFee")) ??
+    (await liveInvoice(ctx, orderId, "deliveryFee"))
+  );
+}
+
+/**
  * What each of the window's arrived Pre-orders owes: its arrived units × the per-unit fee, plus
  * its frozen Delivery Fee when it's known. Earliest placed first, as the arrival filled them.
  */
-async function planInvoices(
-  ctx: Pick<QueryCtx, "db">,
-  windowId: Id<"orderWindows">,
-  fee: number,
-) {
+async function planInvoices(ctx: Pick<QueryCtx, "db">, windowId: Id<"orderWindows">, fee: number) {
   const orders = (
     await ctx.db
       .query("orders")
@@ -218,16 +230,25 @@ async function planInvoices(
     const units = lines.reduce((sum, line) => sum + (line.arrivedUnits ?? 0), 0);
     const shipping = units * fee;
     const { fulfilment } = order;
-    const deliveryFee =
-      fulfilment.method === "delivery" && fulfilment.deliveryFee ? fulfilment.deliveryFee : 0;
-    const invoiceLines: Doc<"invoices">["lines"] = [
-      { kind: "shippingFee", units, unitFee: fee, amount: shipping },
-    ];
+    const deliveryFee = invoicedDeliveryFee(fulfilment);
+    // With no Shipping Fee to charge, the Delivery Fee is billed on its own, so it's never
+    // Forfeited.
+    const kind: Doc<"invoices">["kind"] =
+      shipping === 0 && deliveryFee > 0 ? "deliveryFee" : "shippingFee";
+    const invoiceLines: Doc<"invoices">["lines"] =
+      kind === "shippingFee"
+        ? [{ kind: "shippingFee", units, unitFee: fee, amount: shipping }]
+        : [];
     if (deliveryFee > 0 && fulfilment.method === "delivery") {
-      invoiceLines.push({ kind: "deliveryFee", zoneName: fulfilment.zoneName, amount: deliveryFee });
+      invoiceLines.push({
+        kind: "deliveryFee",
+        zoneName: fulfilment.zoneName,
+        amount: deliveryFee,
+      });
     }
     plans.push({
       order,
+      kind,
       units,
       shipping,
       deliveryFee,
@@ -283,7 +304,7 @@ export async function issueInvoices(
     }
     const code = await newInvoiceCode(ctx);
     await ctx.db.insert("invoices", {
-      kind: "shippingFee",
+      kind: plan.kind,
       orderId: order._id,
       number: await nextReference(ctx, "INV"),
       code,
@@ -302,7 +323,15 @@ export async function issueInvoices(
       amount: plan.total,
     });
     issued++;
-    if (customer) {
+    if (customer && plan.kind === "deliveryFee" && order.fulfilment.method === "delivery") {
+      await queueSms(ctx, customer.phone, "deliveryFeeInvoice", {
+        reference: order.reference,
+        zoneName: order.fulfilment.zoneName,
+        total: plan.total,
+        due: dayMonth(now + dueAfterMs),
+        payUrl: payUrl(code),
+      });
+    } else if (customer) {
       await queueSms(ctx, customer.phone, "shippingFeeInvoice", {
         reference: order.reference,
         units: plan.units,
@@ -316,6 +345,90 @@ export async function issueInvoices(
   }
   await ctx.db.patch(windowId, { invoicesIssuedAt: now });
   return { issued, ready };
+}
+
+/** Whether Staff can quote this order's Delivery Fee now: Elsewhere, unquoted, and still open. */
+export function deliveryQuotable(order: Doc<"orders">) {
+  return (
+    awaitsDeliveryQuote(order.fulfilment) &&
+    (order.status === "awaitingArrival" || order.status === "paymentDue")
+  );
+}
+
+/**
+ * Staff quote an Elsewhere in Ghana Delivery Fee. On a Pre-order whose Shipping Fee Invoice
+ * isn't issued yet, the fee waits to go on it as a line. Otherwise it's billed on its own
+ * Delivery Fee Invoice, due 14 days from now and texted with its `/p/` link; the order waits at
+ * payment due until every invoice on it is paid. A Delivery Fee Invoice never leads to Forfeit.
+ */
+export async function quoteDeliveryFee(
+  ctx: Pick<MutationCtx, "db" | "scheduler">,
+  actor: Doc<"staff">,
+  { orderId, fee }: { orderId: Id<"orders">; fee: number },
+) {
+  const order = await ctx.db.get(orderId);
+  if (!order) refuse("NOT_FOUND", "That order doesn't exist.");
+  const { fulfilment } = order;
+  if (fulfilment.method !== "delivery" || fulfilment.deliveryFee !== undefined) {
+    refuse("NOT_ELSEWHERE", `${order.reference}'s Delivery Fee was set at Checkout.`);
+  }
+  if (fulfilment.quotedFee !== undefined) {
+    refuse(
+      "ALREADY_QUOTED",
+      `${order.reference}'s Delivery Fee is already quoted. Void & reissue its invoice to change it.`,
+    );
+  }
+  if (!deliveryQuotable(order)) {
+    refuse("NOT_QUOTABLE", `${order.reference} is no longer open, so its fee can't be quoted.`);
+  }
+  if (!Number.isSafeInteger(fee) || fee <= 0) {
+    refuse("INVALID_FEE", "Enter the Delivery Fee in GH₵, to the pesewa.");
+  }
+  const staff = { kind: "staff" as const, staffId: actor._id };
+  await ctx.db.patch(order._id, {
+    fulfilment: { ...fulfilment, quotedFee: fee },
+  });
+
+  // Before its Shipping Fee Invoice: the fee rides on it as a line when it's issued.
+  if (order.status === "awaitingArrival") {
+    await ctx.db.insert("orderEvents", {
+      orderId: order._id,
+      kind: "deliveryQuoted",
+      actor: staff,
+      amount: fee,
+    });
+    return;
+  }
+
+  const now = Date.now();
+  const code = await newInvoiceCode(ctx);
+  await ctx.db.insert("invoices", {
+    kind: "deliveryFee",
+    orderId: order._id,
+    number: await nextReference(ctx, "INV"),
+    code,
+    lines: [{ kind: "deliveryFee", zoneName: fulfilment.zoneName, amount: fee }],
+    total: fee,
+    status: "unpaid",
+    clockStartedAt: now,
+    issuedBy: actor._id,
+  });
+  await ctx.db.insert("orderEvents", {
+    orderId: order._id,
+    kind: "invoiced",
+    actor: staff,
+    amount: fee,
+  });
+  const customer = await ctx.db.get(order.customerId);
+  if (customer) {
+    await queueSms(ctx, customer.phone, "deliveryFeeInvoice", {
+      reference: order.reference,
+      zoneName: fulfilment.zoneName,
+      total: fee,
+      due: dayMonth(now + dueAfterMs),
+      payUrl: payUrl(code),
+    });
+  }
 }
 
 /** The invoice still in force at the end of a void → replacement chain: itself if not replaced. */
@@ -389,6 +502,18 @@ export async function voidAndReissue(
       "The Customer is paying this invoice on Seev now. Try again once that checkout ends.",
     );
   }
+  if (
+    invoice.kind === "shippingFee" &&
+    deliveryFee !== undefined &&
+    deliveryFee > 0 &&
+    !invoice.lines.some((line) => line.kind === "deliveryFee") &&
+    (await liveInvoice(ctx, order._id, "deliveryFee"))
+  ) {
+    refuse(
+      "DELIVERY_FEE_INVOICED",
+      `${order.reference}'s Delivery Fee is on its own invoice. Correct that one instead.`,
+    );
+  }
   if (deliveryFee !== undefined && deliveryFee > 0 && order.fulfilment.method !== "delivery") {
     refuse("NOT_DELIVERY", `${order.reference} is for Pickup, so it has no Delivery Fee.`);
   }
@@ -444,6 +569,13 @@ export async function voidAndReissue(
     voidReason,
     supersededById: replacementId,
   });
+  // A corrected Elsewhere quote replaces the one on the order.
+  const reissuedDelivery = lines.find((line) => line.kind === "deliveryFee");
+  if (fulfilment.method === "delivery" && fulfilment.quotedFee !== undefined && reissuedDelivery) {
+    await ctx.db.patch(order._id, {
+      fulfilment: { ...fulfilment, quotedFee: reissuedDelivery.amount },
+    });
+  }
   await ctx.db.insert("orderEvents", {
     orderId: order._id,
     kind: "invoiceReissued",
@@ -501,7 +633,6 @@ export const invoiceDocumentFields = {
   voidReason: v.optional(v.string()),
 };
 
-
 /** An invoice by its `/p/` code, or null. */
 export async function findInvoiceByCode(ctx: Pick<QueryCtx, "db">, code: string) {
   return await ctx.db
@@ -538,12 +669,19 @@ export async function invoiceDocument(ctx: Pick<QueryCtx, "db">, invoice: Doc<"i
     fulfilment: fulfilmentAsShown(order.fulfilment),
     pickupLocation: await pickupLocation(ctx),
     // A Pre-order's units are only ever cut by its arrival, so what didn't arrive is the rest.
-    items: lines.map((line) => ({
-      productName: line.productName,
-      variantLabel: line.variantLabel,
-      arrived: line.arrivedUnits ?? 0,
-      missing: line.quantity - (line.arrivedUnits ?? 0),
-    })),
+    // A Store Order's units are all in hand, less any cancelled or refunded.
+    items: lines.map((line) => {
+      const arrived =
+        order.kind === "store"
+          ? line.quantity - (line.refundedQuantity ?? 0)
+          : (line.arrivedUnits ?? 0);
+      return {
+        productName: line.productName,
+        variantLabel: line.variantLabel,
+        arrived,
+        missing: order.kind === "store" ? 0 : line.quantity - arrived,
+      };
+    }),
     lines: invoice.lines,
     total: invoice.total,
     ...(itemPayment ? { itemReceiptNumber: itemPayment.receiptNumber } : {}),
@@ -594,7 +732,7 @@ export async function invoiceProgress(ctx: Pick<QueryCtx, "db">, window: Doc<"or
     .withIndex("by_orderWindow", (q) => q.eq("orderWindowId", window._id))
     .collect();
   for (const order of orders) {
-    const invoice = await liveInvoice(ctx, order._id, "shippingFee");
+    const invoice = await windowInvoice(ctx, order._id);
     if (!invoice) continue;
     progress.count++;
     if (invoice.status === "paid") progress.paid++;
