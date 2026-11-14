@@ -85,6 +85,7 @@ export const smsTemplate = v.union(
   v.literal("invoiceFinalReminder"),
   v.literal("uncollectedReminder"),
   v.literal("forfeited"),
+  v.literal("windowAlert"),
 );
 /** A Checkout's life: `pending` while it awaits payment, then paid, or expired / released unpaid. */
 export const checkoutStatus = v.union(
@@ -249,6 +250,12 @@ export const invoiceLine = v.union(
   }),
   v.object({ kind: v.literal("deliveryFee"), zoneName: v.string(), amount: v.number() }),
 );
+/** An Alert Subscriber: `pending` until the texted code confirms the number. */
+export const alertSubscriberStatus = v.union(
+  v.literal("pending"),
+  v.literal("confirmed"),
+  v.literal("unsubscribed"),
+);
 const invitationStatus = v.union(
   v.literal("pending"),
   v.literal("accepted"),
@@ -307,7 +314,9 @@ export default defineSchema({
     error: v.optional(v.string()),
     /** The message this one resends. */
     resendOf: v.optional(v.id("smsMessages")),
-    // Refs to the order, invoice, window or subscriber are added with those tables.
+    /** The Window Alert it's part of. */
+    windowAlertId: v.optional(v.id("windowAlerts")),
+    // Refs to the order or invoice are added with those tables.
   })
     .index("by_to_and_template", ["to", "template"])
     .index("by_arkeselId", ["arkeselId"])
@@ -378,6 +387,8 @@ export default defineSchema({
     shippingFeeConfirmed: v.optional(v.number()),
     /** Staff checked the supplier's bill for a fee more than 20% over the estimate. */
     overEstimateAcknowledged: v.optional(v.boolean()),
+    /** When a Window Alert first announced it. */
+    announcedAt: v.optional(v.number()),
     /** When its Shipping Fee Invoices were issued; they're issued once, for the whole window. */
     invoicesIssuedAt: v.optional(v.number()),
     /** The one `scheduler.runAt(closesAt)` auto-close job; Extend and Close now replace it. */
@@ -679,6 +690,40 @@ export default defineSchema({
     changedBy: v.optional(v.id("staff")),
     changedAt: v.optional(v.number()),
   }),
+
+  // A phone number signed up for Window Alerts on the Storefront. It needn't be a Customer.
+  alertSubscribers: defineTable({
+    /** E.164, e.g. +233241234567. */
+    phone: v.string(),
+    status: alertSubscriberStatus,
+    /** How they consented: the Storefront sign-up, confirmed with a texted code. */
+    consentSource: v.optional(v.literal("storefront")),
+    /** When they confirmed; missing while pending. */
+    consentedAt: v.optional(v.number()),
+    /** The 6-digit code texted to confirm the number, while it's pending. */
+    confirmCode: v.optional(v.string()),
+    confirmCodeExpiresAt: v.optional(v.number()),
+    /** Wrong tries at the current code. */
+    confirmAttempts: v.optional(v.number()),
+    /** The 8-character `/u/` code every alert carries to unsubscribe in one tap. */
+    unsubscribeCode: v.string(),
+    unsubscribedAt: v.optional(v.number()),
+    /** The Customer with the same phone, if there was one when they confirmed. */
+    customerId: v.optional(v.id("customers")),
+  })
+    .index("by_phone", ["phone"])
+    .index("by_unsubscribeCode", ["unsubscribeCode"])
+    .index("by_status", ["status"]),
+
+  // One per Window Alert Staff sent; the one-a-day cap is checked against the latest.
+  windowAlerts: defineTable({
+    sentAt: v.number(),
+    /** The open windows it announced, in the order the SMS names them. */
+    windowIds: v.array(v.id("orderWindows")),
+    /** Confirmed Alert Subscribers it was queued to; counted up as the batches go out. */
+    recipients: v.number(),
+    staffId: v.id("staff"),
+  }).index("by_sentAt", ["sentAt"]),
 
   // A single row, seeded by the bootstrap and edited by an Owner.
   settings: defineTable({

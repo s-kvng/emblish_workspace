@@ -9,6 +9,7 @@ import { cedi } from "@/lib/money";
 
 import ProductPhoto from "./product-photo";
 import ShelfGrid from "./shelf-grid";
+import WindowAlertsSignup from "./window-alerts-signup";
 
 const reassurances = [
   {
@@ -220,6 +221,8 @@ export default function HomeView({
           ))}
         </ol>
       </section>
+
+      <WindowAlertsSignup />
 
       {/* In-stock grid */}
       <section id="in-stock" className="mt-8 scroll-mt-4 px-4">

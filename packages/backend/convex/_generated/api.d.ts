@@ -10,6 +10,7 @@
 
 import type * as auth from "../auth.js";
 import type * as crons from "../crons.js";
+import type * as backOffice_alerts from "../backOffice/alerts.js";
 import type * as backOffice_arrivals from "../backOffice/arrivals.js";
 import type * as backOffice_categories from "../backOffice/categories.js";
 import type * as backOffice_deliveryZones from "../backOffice/deliveryZones.js";
@@ -25,6 +26,8 @@ import type * as backOffice_windows from "../backOffice/windows.js";
 import type * as healthCheck from "../healthCheck.js";
 import type * as http from "../http.js";
 import type * as lib_guards from "../lib/guards.js";
+import type * as model_alertTiming from "../model/alertTiming.js";
+import type * as model_alerts from "../model/alerts.js";
 import type * as model_arkesel from "../model/arkesel.js";
 import type * as model_arrivals from "../model/arrivals.js";
 import type * as model_authUsers from "../model/authUsers.js";
@@ -53,12 +56,14 @@ import type * as model_shelf from "../model/shelf.js";
 import type * as model_sms from "../model/sms.js";
 import type * as model_staff from "../model/staff.js";
 import type * as model_stock from "../model/stock.js";
+import type * as storefront_alerts from "../storefront/alerts.js";
 import type * as storefront_catalog from "../storefront/catalog.js";
 import type * as storefront_checkout from "../storefront/checkout.js";
 import type * as storefront_customer from "../storefront/customer.js";
 import type * as storefront_invoices from "../storefront/invoices.js";
 import type * as storefront_orders from "../storefront/orders.js";
 import type * as storefront_receipts from "../storefront/receipts.js";
+import type * as system_alerts from "../system/alerts.js";
 import type * as system_bootstrap from "../system/bootstrap.js";
 import type * as system_checkout from "../system/checkout.js";
 import type * as system_customers from "../system/customers.js";
@@ -81,6 +86,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   crons: typeof crons;
+  "backOffice/alerts": typeof backOffice_alerts;
   "backOffice/arrivals": typeof backOffice_arrivals;
   "backOffice/categories": typeof backOffice_categories;
   "backOffice/deliveryZones": typeof backOffice_deliveryZones;
@@ -96,6 +102,8 @@ declare const fullApi: ApiFromModules<{
   healthCheck: typeof healthCheck;
   http: typeof http;
   "lib/guards": typeof lib_guards;
+  "model/alertTiming": typeof model_alertTiming;
+  "model/alerts": typeof model_alerts;
   "model/arkesel": typeof model_arkesel;
   "model/arrivals": typeof model_arrivals;
   "model/authUsers": typeof model_authUsers;
@@ -124,12 +132,14 @@ declare const fullApi: ApiFromModules<{
   "model/sms": typeof model_sms;
   "model/staff": typeof model_staff;
   "model/stock": typeof model_stock;
+  "storefront/alerts": typeof storefront_alerts;
   "storefront/catalog": typeof storefront_catalog;
   "storefront/checkout": typeof storefront_checkout;
   "storefront/customer": typeof storefront_customer;
   "storefront/invoices": typeof storefront_invoices;
   "storefront/orders": typeof storefront_orders;
   "storefront/receipts": typeof storefront_receipts;
+  "system/alerts": typeof system_alerts;
   "system/bootstrap": typeof system_bootstrap;
   "system/checkout": typeof system_checkout;
   "system/customers": typeof system_customers;

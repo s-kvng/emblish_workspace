@@ -54,6 +54,14 @@ function StackLayout() {
         <Stack.Screen name="windows/product" />
         <Stack.Screen name="windows/new" options={{ gestureEnabled: false }} />
         <Stack.Screen
+          name="windows/announce"
+          options={{
+            presentation: "formSheet",
+            sheetAllowedDetents: [0.9],
+            sheetGrabberVisible: true,
+          }}
+        />
+        <Stack.Screen
           name="windows/stage"
           options={{
             presentation: "formSheet",

@@ -3,27 +3,15 @@ import { v } from "convex/values";
 import { internal } from "../_generated/api";
 import { internalAction, internalMutation, internalQuery } from "../_generated/server";
 import { deliveryOutcome, sendSms } from "../model/arkesel";
-import { queueSms, redactSms } from "../model/sms";
+import { loginCodeAllowed, queueSms, redactSms } from "../model/sms";
 import { smsStatus } from "../schema";
-
-/** A number gets at most this many login codes an hour. */
-const loginCodesPerHour = 3;
 
 /** Asked by Better Auth to text a login code. Refuses once the number has had its hourly share. */
 export const queueLoginCode = internalMutation({
   args: { phone: v.string(), code: v.string() },
   returns: v.object({ queued: v.boolean() }),
   handler: async (ctx, { phone, code }) => {
-    const recent = await ctx.db
-      .query("smsMessages")
-      .withIndex("by_to_and_template", (q) =>
-        q
-          .eq("to", phone)
-          .eq("template", "loginCode")
-          .gt("_creationTime", Date.now() - 60 * 60 * 1000),
-      )
-      .take(loginCodesPerHour);
-    if (recent.length >= loginCodesPerHour) return { queued: false };
+    if (!(await loginCodeAllowed(ctx, phone))) return { queued: false };
     await queueSms(ctx, phone, "loginCode", { code });
     return { queued: true };
   },

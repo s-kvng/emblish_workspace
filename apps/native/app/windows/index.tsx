@@ -28,6 +28,12 @@ export default function WindowsScreen() {
             <Button.Label>Open a window</Button.Label>
           </Button>
         </Link>
+        <Link href="/windows/announce" asChild>
+          <Button variant="secondary">
+            <Ionicons name="megaphone-outline" size={20} color={brand.purple} />
+            <Button.Label>Announce open windows</Button.Label>
+          </Button>
+        </Link>
         {live === undefined ? (
           <Spinner />
         ) : (
