@@ -40,8 +40,11 @@ const card = v.object({
   canCancel: v.boolean(),
   /** On a cancelled Pre-order: whether the Customer or Staff cancelled it. */
   cancelReason: v.optional(cancelReason),
-  /** The invoice waiting to be paid, opening `/p/<code>`: "Pay GH₵ X · due <date>". */
-  invoice: v.optional(
+  /**
+   * The invoices waiting to be paid, oldest first, each opening `/p/<code>`: "Pay GH₵ X · due
+   * <date>". A Pre-order can owe a Shipping Fee Invoice and a Delivery Fee Invoice at once.
+   */
+  invoices: v.array(
     v.object({ kind: invoiceKind, code: v.string(), total: v.number(), dueAt: v.number() }),
   ),
   /** Only while the order is Ready for pickup; never once it's handed over. */
@@ -110,26 +113,17 @@ export const mine = query({
       const payment = await ctx.db.get(order.paymentId);
       if (!payment) continue;
       const window = order.orderWindowId ? await ctx.db.get(order.orderWindowId) : null;
-      const unpaid = (await invoicesOnOrder(ctx, order._id)).find((i) => i.status === "unpaid");
+      const unpaid = (await invoicesOnOrder(ctx, order._id)).filter((i) => i.status === "unpaid");
       cards.push({
         orderId: order._id,
         reference: order.reference,
         kind: order.kind,
         status: order.status,
-        needsAction: customerNeedsToAct(order) || unpaid !== undefined,
+        needsAction: customerNeedsToAct(order) || unpaid.length > 0,
         past: isPastOrder(order),
         canCancel: await selfCancellable(ctx, order),
         ...(order.cancelReason ? { cancelReason: order.cancelReason } : {}),
-        ...(unpaid
-          ? {
-              invoice: {
-                kind: unpaid.kind,
-                code: unpaid.code,
-                total: unpaid.total,
-                dueAt: unpaid.dueAt,
-              },
-            }
-          : {}),
+        invoices: unpaid.map(({ kind, code, total, dueAt }) => ({ kind, code, total, dueAt })),
         ...(handOverable(order) ? { pickupCode: order.pickupCode } : {}),
         lines: await orderLinesWithPhotos(ctx, order._id),
         payment: {

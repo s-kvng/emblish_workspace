@@ -246,7 +246,7 @@ describe("My orders and order detail", () => {
     const p2 = cards.find((card) => card.reference === "P-0002");
     expect(p2).toMatchObject({
       needsAction: true,
-      invoice: { kind: "shippingFee", code: codes.kofi2, total: 1800 },
+      invoices: [{ kind: "shippingFee", code: codes.kofi2, total: 1800 }],
     });
   });
 

@@ -83,8 +83,9 @@ function statusText(card: Card) {
     const refund = cancelRefundState(card);
     return refund ? `${by} · ${refund}` : by;
   }
-  if (card.invoice) {
-    return card.invoice.kind === "shippingFee" ? "Shipping Fee due" : "Delivery Fee due";
+  if (card.invoices.length > 1) return "Shipping and Delivery Fees due";
+  if (card.invoices[0]) {
+    return card.invoices[0].kind === "shippingFee" ? "Shipping Fee due" : "Delivery Fee due";
   }
   if (card.fulfilment.method === "delivery") {
     if (card.status === "ready") return "Ready for delivery";
@@ -133,13 +134,17 @@ function stageLine(window: NonNullable<Card["window"]>) {
   return range ? `${label} · next: Arrived, ${range}` : label;
 }
 
-/** "Pay GH₵ 18 · due 27 Nov · 14d left", or "… · overdue 3d". */
-function payText(invoice: NonNullable<Card["invoice"]>) {
+/**
+ * "Pay GH₵ 18 · due 27 Nov · 14d left", or "… · overdue 3d". Named ("Pay Delivery Fee …") when
+ * the order owes more than one invoice.
+ */
+function payText(invoice: Card["invoices"][number], named: boolean) {
   const days =
     Math.floor(invoice.dueAt / (24 * 60 * 60 * 1000)) -
     Math.floor(Date.now() / (24 * 60 * 60 * 1000));
   const left = days >= 0 ? `${days}d left` : `overdue ${-days}d`;
-  return `Pay ${cedi(invoice.total)} · due ${day(invoice.dueAt)} · ${left}`;
+  const what = named ? (invoice.kind === "shippingFee" ? " Shipping Fee" : " Delivery Fee") : "";
+  return `Pay${what} ${cedi(invoice.total)} · due ${day(invoice.dueAt)} · ${left}`;
 }
 
 function day(at: number) {
@@ -435,14 +440,17 @@ function OrderCard({
         </div>
       </button>
 
-      {card.invoice && (
-        <div className="px-4 pb-3">
-          <Link
-            href={`/p/${card.invoice.code}` as Route}
-            className="flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-brand-gold px-3 py-2 text-center font-semibold text-brand-purple-deep text-sm"
-          >
-            {payText(card.invoice)}
-          </Link>
+      {card.invoices.length > 0 && (
+        <div className="grid gap-2 px-4 pb-3">
+          {card.invoices.map((invoice) => (
+            <Link
+              key={invoice.code}
+              href={`/p/${invoice.code}` as Route}
+              className="flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-brand-gold px-3 py-2 text-center font-semibold text-brand-purple-deep text-sm"
+            >
+              {payText(invoice, card.invoices.length > 1)}
+            </Link>
+          ))}
         </div>
       )}
       {card.pickupCode && !open && (

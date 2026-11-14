@@ -381,3 +381,84 @@ describe("correcting a Shipping Fee Invoice beside a Delivery Fee Invoice", () =
     ).toBe("DELIVERY_FEE_INVOICED");
   });
 });
+
+describe("My orders with a quoted Delivery Fee", () => {
+  test("a Pre-order owing both fees shows a Pay link for each invoice", async () => {
+    const { customer, ama, orderId } = await elsewherePreorder({ arrive: true });
+    await ama.mutation(api.backOffice.orders.quoteDeliveryFee, { orderId, fee: 6000 });
+
+    const [card] = await customer.query(api.storefront.orders.mine, {});
+
+    expect(card).toMatchObject({
+      reference: "P-0001",
+      status: "paymentDue",
+      needsAction: true,
+      invoices: [
+        { kind: "shippingFee", total: 1800 },
+        { kind: "deliveryFee", total: 6000 },
+      ],
+    });
+  });
+});
+
+describe("refunding a paid quoted Delivery Fee", () => {
+  /** The Elsewhere Store Order with its GHS 45 quote paid at /p/ (Receipt R-0002). */
+  async function quotedAndPaid() {
+    const shop = await elsewhereStoreOrder();
+    await shop.esi.mutation(api.backOffice.orders.quoteDeliveryFee, {
+      orderId: shop.order.orderId,
+      fee: 4500,
+    });
+    const [quote] = await sms.to(shop.t, kofiPhone.slice(1));
+    await payAtP(shop.t, payCodeIn(quote!.message));
+    const ama = await withStaffMember(shop.t, "Ama Mensah", "owner");
+    return { ...shop, ama };
+  }
+
+  test("after handover an Owner refunds it against the invoice's own payment", async () => {
+    const { esi, ama, order } = await quotedAndPaid();
+    await esi.mutation(api.backOffice.orders.dispatch, {
+      orderId: order.orderId,
+      riderName: "Yaw",
+    });
+    await esi.mutation(api.backOffice.orders.markDelivered, { orderId: order.orderId });
+    expect(
+      (await ama.query(api.backOffice.orders.get, { orderId: order.orderId }))
+        .refundableDeliveryFee,
+    ).toBe(4500);
+
+    await ama.mutation(api.backOffice.orders.refundAfterHandover, {
+      orderId: order.orderId,
+      lines: [],
+      deliveryFee: true,
+      note: "Rider was two days late",
+    });
+
+    const toMake = await ama.query(api.backOffice.refunds.toMake, {});
+    expect(toMake).toMatchObject({
+      total: 4500,
+      refunds: [{ kind: "afterHandover", amount: 4500, receiptNumber: "R-0002" }],
+    });
+    expect(
+      (await ama.query(api.backOffice.orders.get, { orderId: order.orderId }))
+        .refundableDeliveryFee,
+    ).toBe(0);
+  });
+
+  test("cancelling every unit before dispatch refunds the goods and the quoted fee", async () => {
+    const { esi, ama, order } = await quotedAndPaid();
+    const [line] = (await esi.query(api.backOffice.orders.get, { orderId: order.orderId })).lines;
+
+    await esi.mutation(api.backOffice.orders.cancelUnits, {
+      orderId: order.orderId,
+      lines: [{ orderLineId: line!.orderLineId, quantity: 1 }],
+    });
+
+    const toMake = await ama.query(api.backOffice.refunds.toMake, {});
+    expect(toMake.total).toBe(45000 + 4500);
+    expect(toMake.refunds).toMatchObject([
+      { kind: "cancelledLine", amount: 45000, receiptNumber: "R-0001" },
+      { kind: "cancelledLine", amount: 4500, receiptNumber: "R-0002" },
+    ]);
+  });
+});
