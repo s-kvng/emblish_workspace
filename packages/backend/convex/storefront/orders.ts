@@ -1,8 +1,15 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 
 import { mutation, query } from "../_generated/server";
 import { requireCustomer } from "../lib/guards";
 import { deliveryAsShown, shownDelivery } from "../model/fulfilment";
+import {
+  switchable,
+  switchEffect,
+  switchFulfilment as switchOwnFulfilment,
+  switchOptions as switchOwnOptions,
+  switchOptionsResult,
+} from "../model/fulfilmentSwitch";
 import {
   customerNeedsToAct,
   handOverable,
@@ -15,6 +22,7 @@ import { cancelPreorder as cancelOwnPreorder, selfCancellable } from "../model/r
 import { pickupLocation } from "../model/settings";
 import {
   cancelReason,
+  fulfilmentRequest,
   invoiceKind,
   orderEventKind,
   orderKind,
@@ -38,6 +46,8 @@ const card = v.object({
    * "Ordered from supplier".
    */
   canCancel: v.boolean(),
+  /** Until it's Dispatched or Collected: "Change pickup or delivery" opens the switch sheet. */
+  canSwitch: v.boolean(),
   /** On a cancelled Pre-order: whether the Customer or Staff cancelled it. */
   cancelReason: v.optional(cancelReason),
   /**
@@ -122,6 +132,7 @@ export const mine = query({
         needsAction: customerNeedsToAct(order) || unpaid.length > 0,
         past: isPastOrder(order),
         canCancel: await selfCancellable(ctx, order),
+        canSwitch: switchable(order),
         ...(order.cancelReason ? { cancelReason: order.cancelReason } : {}),
         invoices: unpaid.map(({ kind, code, total, dueAt }) => ({ kind, code, total, dueAt })),
         ...(handOverable(order) ? { pickupCode: order.pickupCode } : {}),
@@ -187,5 +198,44 @@ export const cancelPreorder = mutation({
     const customer = await requireCustomer(ctx);
     await cancelOwnPreorder(ctx, { kind: "customer", customer }, { orderId });
     return null;
+  },
+});
+
+/**
+ * The switch sheet on a My orders card: Pickup and each Delivery Zone with its fee, the
+ * difference from what the order pays now, and the money effect. Only the Customer's own orders.
+ */
+export const switchOptions = query({
+  args: { orderId: v.id("orders") },
+  returns: switchOptionsResult,
+  handler: async (ctx, { orderId }) => {
+    const customer = await requireCustomer(ctx);
+    const order = await ctx.db.get(orderId);
+    if (!order || order.customerId !== customer._id) {
+      throw new ConvexError({ code: "NOT_FOUND", message: "That order doesn't exist." });
+    }
+    return await switchOwnOptions(ctx, order);
+  },
+});
+
+/**
+ * Switches the Customer's own order to Pickup, or Delivery to a zone and address, until it's
+ * Dispatched or Collected. Returns the money effect applied, as the sheet showed it.
+ */
+export const switchFulfilment = mutation({
+  args: {
+    orderId: v.id("orders"),
+    to: fulfilmentRequest,
+    /** The money effect the sheet showed; the switch is refused if it no longer holds. */
+    expected: v.optional(v.array(switchEffect)),
+  },
+  returns: v.array(switchEffect),
+  handler: async (ctx, { orderId, to, expected }) => {
+    const customer = await requireCustomer(ctx);
+    return await switchOwnFulfilment(
+      ctx,
+      { kind: "customer", customer },
+      { orderId, to, expected },
+    );
   },
 });

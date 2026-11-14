@@ -20,6 +20,7 @@ import {
   overrideReasonLabel,
 } from "@/components/order-labels";
 import { ScreenHeader } from "@/components/screen-header";
+import { SwitchFulfilment } from "@/components/switch-fulfilment";
 import { refusalMessage } from "@/lib/form-errors";
 import { formatGhs, parseGhs } from "@/lib/money";
 import { useStaffMember } from "@/lib/staff-member";
@@ -40,6 +41,7 @@ const eventLabel = {
   invoiceReissued: "Invoice voided & reissued",
   ready: "Ready",
   deliveryQuoted: "Delivery Fee quoted",
+  fulfilmentSwitched: "Fulfilment switched",
 } as const;
 
 const invoiceStatusLabel = { unpaid: "Unpaid", paid: "Paid", void: "Void" } as const;
@@ -62,7 +64,7 @@ function statusText(order: Order) {
 /** How the Delivery Fee stands, under the address. */
 function deliveryFeeText(fulfilment: Extract<Order["fulfilment"], { method: "delivery" }>) {
   if (fulfilment.deliveryFee !== undefined) {
-    return `Delivery Fee ${formatGhs(fulfilment.deliveryFee)}, paid at Checkout`;
+    return `Delivery Fee ${formatGhs(fulfilment.deliveryFee)}`;
   }
   if (fulfilment.quotedFee !== undefined) {
     return `Delivery Fee ${formatGhs(fulfilment.quotedFee)}, quoted (Elsewhere in Ghana)`;
@@ -229,6 +231,7 @@ export default function OrderDetailScreen() {
             </Section>
           ) : null}
 
+          <SwitchAction order={order} />
           <OrderActions order={order} />
 
           <Section title="History">
@@ -348,6 +351,23 @@ function QuoteDeliveryFee({ order }: { order: Order }) {
         <Button.Label>Quote Delivery Fee</Button.Label>
       </Button>
     </View>
+  );
+}
+
+/** Switch fulfilment, until the order is Dispatched or Collected. */
+function SwitchAction({ order }: { order: Order }) {
+  const [open, setOpen] = useState(false);
+  if (!order.canSwitch) return null;
+  return (
+    <Section title="Switch fulfilment">
+      {open ? (
+        <SwitchFulfilment order={order} onDone={() => setOpen(false)} />
+      ) : (
+        <Button variant="secondary" onPress={() => setOpen(true)}>
+          <Button.Label>Switch Pickup / Delivery</Button.Label>
+        </Button>
+      )}
+    </Section>
   );
 }
 

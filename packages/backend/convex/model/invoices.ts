@@ -400,6 +400,28 @@ export async function quoteDeliveryFee(
     return;
   }
 
+  await issueDeliveryFeeInvoice(ctx, staff, order, fulfilment.zoneName, fee);
+}
+
+/** Who an invoice action is by, as `orderEvents` records it. */
+export type InvoiceActor = Doc<"orderEvents">["actor"];
+
+/** The Staff member behind an action, for an invoice's `issuedBy`; none when the Customer did it. */
+function issuedBy(by: InvoiceActor) {
+  return by.kind === "staff" ? { issuedBy: by.staffId } : {};
+}
+
+/**
+ * A Delivery Fee Invoice for `amount` pesewas, due 14 days from now, texted to the Customer with
+ * its `/p/` link. It never leads to Forfeit.
+ */
+export async function issueDeliveryFeeInvoice(
+  ctx: Pick<MutationCtx, "db" | "scheduler">,
+  by: InvoiceActor,
+  order: Doc<"orders">,
+  zoneName: string,
+  amount: number,
+) {
   const now = Date.now();
   const code = await newInvoiceCode(ctx);
   await ctx.db.insert("invoices", {
@@ -407,28 +429,55 @@ export async function quoteDeliveryFee(
     orderId: order._id,
     number: await nextReference(ctx, "INV"),
     code,
-    lines: [{ kind: "deliveryFee", zoneName: fulfilment.zoneName, amount: fee }],
-    total: fee,
+    lines: [{ kind: "deliveryFee", zoneName, amount }],
+    total: amount,
     status: "unpaid",
     clockStartedAt: now,
-    issuedBy: actor._id,
+    ...issuedBy(by),
   });
   await ctx.db.insert("orderEvents", {
     orderId: order._id,
     kind: "invoiced",
-    actor: staff,
-    amount: fee,
+    actor: by,
+    amount,
   });
   const customer = await ctx.db.get(order.customerId);
   if (customer) {
     await queueSms(ctx, customer.phone, "deliveryFeeInvoice", {
       reference: order.reference,
-      zoneName: fulfilment.zoneName,
-      total: fee,
+      zoneName,
+      total: amount,
       due: dayMonth(now + dueAfterMs),
       payUrl: payUrl(code),
     });
   }
+}
+
+/**
+ * Refuses while a Seev checkout is still open on the invoice: it could be paid after a void,
+ * leaving a Refund to make.
+ */
+export async function refuseWhilePaying(ctx: Pick<QueryCtx, "db">, invoice: Doc<"invoices">) {
+  const sessions = await ctx.db
+    .query("paymentSessions")
+    .withIndex("by_invoice", (q) => q.eq("invoiceId", invoice._id))
+    .collect();
+  if (sessions.some((s) => s.settledAt === undefined && s.expiresAt > Date.now())) {
+    refuse(
+      "PAYMENT_IN_PROGRESS",
+      "The Customer is paying this invoice on Seev now. Try again once that checkout ends.",
+    );
+  }
+}
+
+/** Voids an unpaid invoice outright, with nothing to replace it. */
+export async function voidInvoice(
+  ctx: Pick<MutationCtx, "db">,
+  invoice: Doc<"invoices">,
+  reason: string,
+) {
+  await refuseWhilePaying(ctx, invoice);
+  await ctx.db.patch(invoice._id, { status: "void", voidReason: reason });
 }
 
 /** The invoice still in force at the end of a void → replacement chain: itself if not replaced. */
@@ -491,17 +540,7 @@ export async function voidAndReissue(
   }
   const order = await ctx.db.get(invoice.orderId);
   if (!order) refuse("NOT_FOUND", "That invoice's order doesn't exist.");
-  // A Seev checkout still open on it could be paid after the void, leaving a Refund to make.
-  const sessions = await ctx.db
-    .query("paymentSessions")
-    .withIndex("by_invoice", (q) => q.eq("invoiceId", invoice._id))
-    .collect();
-  if (sessions.some((s) => s.settledAt === undefined && s.expiresAt > Date.now())) {
-    refuse(
-      "PAYMENT_IN_PROGRESS",
-      "The Customer is paying this invoice on Seev now. Try again once that checkout ends.",
-    );
-  }
+  await refuseWhilePaying(ctx, invoice);
   if (
     invoice.kind === "shippingFee" &&
     deliveryFee !== undefined &&
@@ -551,6 +590,31 @@ export async function voidAndReissue(
     refuse("ZERO_TOTAL", "The corrected invoice comes to GH₵0. Nothing would be left to pay.");
   }
 
+  return await writeReplacement(
+    ctx,
+    { kind: "staff", staffId: actor._id },
+    invoice,
+    order,
+    lines,
+    voidReason,
+  );
+}
+
+/**
+ * Writes the corrected invoice with these lines over an unpaid one: its own number and `/p/`
+ * code, the first issue date kept so the due date, reminders and Forfeit clock carry on. The old
+ * one is voided with the reason, and the Customer is texted the new link.
+ */
+export async function writeReplacement(
+  ctx: Pick<MutationCtx, "db" | "scheduler">,
+  by: InvoiceActor,
+  invoice: Doc<"invoices">,
+  order: Doc<"orders">,
+  lines: Doc<"invoices">["lines"],
+  voidReason: string,
+) {
+  const { fulfilment } = order;
+  const total = lines.reduce((sum, line) => sum + line.amount, 0);
   const code = await newInvoiceCode(ctx);
   const replacementId = await ctx.db.insert("invoices", {
     kind: invoice.kind,
@@ -561,7 +625,7 @@ export async function voidAndReissue(
     total,
     status: "unpaid",
     clockStartedAt: invoice.clockStartedAt,
-    issuedBy: actor._id,
+    ...issuedBy(by),
     supersedesId: invoice._id,
   });
   await ctx.db.patch(invoice._id, {
@@ -579,7 +643,7 @@ export async function voidAndReissue(
   await ctx.db.insert("orderEvents", {
     orderId: order._id,
     kind: "invoiceReissued",
-    actor: { kind: "staff", staffId: actor._id },
+    actor: by,
     amount: total,
     note: voidReason,
   });

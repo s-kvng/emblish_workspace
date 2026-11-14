@@ -187,6 +187,7 @@ export const orderEventKind = v.union(
   v.literal("invoiceReissued"),
   v.literal("ready"),
   v.literal("deliveryQuoted"),
+  v.literal("fulfilmentSwitched"),
 );
 /**
  * Who did something to an order: a Staff member, the Customer (cancelling their own Pre-order),
@@ -571,7 +572,7 @@ export default defineSchema({
      * and on `invoiced` / `invoiceReissued` (the new total).
      */
     amount: v.optional(v.number()),
-    /** Free text; on `invoiceReissued`, the void reason. */
+    /** Free text; on `invoiceReissued`, the void reason; on `fulfilmentSwitched`, from → to. */
     note: v.optional(v.string()),
   }).index("by_order", ["orderId"]),
 
@@ -622,7 +623,8 @@ export default defineSchema({
      * and Forfeit eligibility count from it.
      */
     clockStartedAt: v.number(),
-    issuedBy: v.id("staff"),
+    /** Missing when the Customer's own fulfilment switch issued it. */
+    issuedBy: v.optional(v.id("staff")),
     /** Set once paid: the payment and when. */
     paymentId: v.optional(v.id("payments")),
     paidAt: v.optional(v.number()),

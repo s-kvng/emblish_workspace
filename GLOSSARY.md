@@ -154,6 +154,10 @@ _Avoid_: Collection code, OTP, PIN
 An area the company delivers to, with a flat Delivery Fee set by the Owner; "Elsewhere in Ghana" is a zone whose fee Staff quote per order.
 _Avoid_: Region, area, delivery band
 
+**Fulfilment Switch**:
+A change to an order's Fulfilment Method, Delivery Zone or address after Checkout, by the signed-in Customer or Staff, until it is Dispatched or Collected. Unpaid Delivery Fees are adjusted on their invoices; a dearer fee already paid is topped up on a Delivery Fee Invoice; a cheaper one becomes a Refund.
+_Avoid_: Fulfilment change, delivery swap
+
 ## Notifications
 
 **Window Alert**:

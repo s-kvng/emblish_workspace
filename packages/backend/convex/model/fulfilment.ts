@@ -15,18 +15,31 @@ function refuse(code: string, message: string): never {
 /**
  * The fulfilment to freeze on a Checkout: Pickup as it is, or Delivery to an active zone
  * at its fee now, with the address checked. The recipient defaults to the Customer.
+ * With `current`, an order's Delivery staying in the same zone keeps the fee frozen on it
+ * (and any quote), even if the zone's fee changed or it was disabled since.
  */
 export async function freezeFulfilment(
   ctx: Pick<QueryCtx, "db">,
   customer: Pick<Doc<"customers">, "name" | "phone">,
   request: FulfilmentRequest,
+  current?: Fulfilment,
 ): Promise<Fulfilment> {
   if (request.method === "pickup") return { method: "pickup" };
 
+  const kept =
+    current?.method === "delivery" && current.zoneId === request.zoneId ? current : undefined;
   const zone = await ctx.db.get(request.zoneId);
-  if (!zone?.active) {
+  if (!zone || (!zone.active && !kept)) {
     refuse("ZONE_UNAVAILABLE", "We no longer deliver to that zone. Pick another one.");
   }
+  const fees = kept
+    ? {
+        ...(kept.deliveryFee === undefined ? {} : { deliveryFee: kept.deliveryFee }),
+        ...(kept.quotedFee === undefined ? {} : { quotedFee: kept.quotedFee }),
+      }
+    : zone.fee === undefined
+      ? {}
+      : { deliveryFee: zone.fee };
   const area = request.area.trim();
   const landmark = request.landmark.trim();
   if (!area || !landmark) {
@@ -48,8 +61,8 @@ export async function freezeFulfilment(
   return {
     method: "delivery",
     zoneId: zone._id,
-    zoneName: zone.name,
-    ...(zone.fee === undefined ? {} : { deliveryFee: zone.fee }),
+    zoneName: kept?.zoneName ?? zone.name,
+    ...fees,
     recipientName,
     recipientPhone,
     area,

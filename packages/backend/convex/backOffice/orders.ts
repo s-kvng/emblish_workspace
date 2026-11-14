@@ -5,6 +5,13 @@ import { mutation, query } from "../_generated/server";
 import { requireOwner, requireStaff } from "../lib/guards";
 import { fulfilmentAsShown, shownFulfilment } from "../model/fulfilment";
 import {
+  switchable,
+  switchEffect,
+  switchFulfilment as switchOrderFulfilment,
+  switchOptions as switchOrderOptions,
+  switchOptionsResult,
+} from "../model/fulfilmentSwitch";
+import {
   deliveryQuotable,
   invoicesOnOrder,
   quoteDeliveryFee as quoteOrderDeliveryFee,
@@ -39,6 +46,7 @@ import { pickupLocation } from "../model/settings";
 import {
   cancelReason,
   deliveryFailureReason,
+  fulfilmentRequest,
   invoiceKind,
   invoiceStatus,
   orderEventKind,
@@ -153,6 +161,39 @@ export const quoteDeliveryFee = mutation({
     const staff = await requireStaff(ctx);
     await quoteOrderDeliveryFee(ctx, staff, args);
     return null;
+  },
+});
+
+/**
+ * ⋯ → Switch fulfilment: Pickup and every Delivery Zone, each with its fee difference and the
+ * money effect switching to it would have. Nothing to pick once the order is Dispatched.
+ */
+export const switchOptions = query({
+  args: { orderId: v.id("orders") },
+  returns: switchOptionsResult,
+  handler: async (ctx, { orderId }) => {
+    await requireStaff(ctx);
+    const order = await ctx.db.get(orderId);
+    if (!order) throw new ConvexError({ code: "NOT_FOUND", message: "That order doesn't exist." });
+    return await switchOrderOptions(ctx, order);
+  },
+});
+
+/**
+ * Switches the order to Pickup, or Delivery to a zone and address, until it's Dispatched or
+ * Collected. Returns the money effect applied, as `switchOptions` showed it.
+ */
+export const switchFulfilment = mutation({
+  args: {
+    orderId: v.id("orders"),
+    to: fulfilmentRequest,
+    /** The money effect the sheet showed; the switch is refused if it no longer holds. */
+    expected: v.optional(v.array(switchEffect)),
+  },
+  returns: v.array(switchEffect),
+  handler: async (ctx, { orderId, to, expected }) => {
+    const staff = await requireStaff(ctx);
+    return await switchOrderFulfilment(ctx, { kind: "staff", staff }, { orderId, to, expected });
   },
 });
 
@@ -285,6 +326,8 @@ export const get = query({
     refundableDeliveryFee: v.number(),
     /** Elsewhere in Ghana with no fee yet: Staff can quote it. */
     canQuoteDeliveryFee: v.boolean(),
+    /** Not yet Dispatched or Collected: ⋯ → Switch fulfilment is offered. */
+    canSwitch: v.boolean(),
     history: v.array(
       v.object({
         kind: orderEventKind,
@@ -361,6 +404,7 @@ export const get = query({
       canRefundAfterHandover: handedOver(order),
       refundableDeliveryFee: await refundableDeliveryFee(ctx, order),
       canQuoteDeliveryFee: deliveryQuotable(order),
+      canSwitch: switchable(order),
       history: await orderHistory(ctx, order._id),
       primaryAction: primaryAction(order),
     };

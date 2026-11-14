@@ -4,6 +4,8 @@ The refunds ticket (s-kvng/emblish_workspace#36) was written for Paystack: the O
 
 Flagging a Refund stays as the ticket designed it. Staff cancel units on a Store Order until it leaves the shop (Payment due or Ready). The units go back to Stock as `cancelled` Stock Movements unless Staff untick it, and cancelling the last units cancels the order and adds its paid Delivery Fee. After handover (Collected or Delivered), only an Owner flags a Refund, with a reason, optionally adding the Delivery Fee and restocking the units as `returned`. Each order line keeps a `refundedQuantity`, so no unit is refunded twice, and each refund row records its `lines`, `deliveryFee` and `returnToStock`.
 
+A Fulfilment Switch (#45) also flags a Refund, of kind `fulfilmentSwitch`, when the Delivery Fee already paid is more than the new one. The Customer can trigger it from My orders, so the row has no `flaggedBy` then; the Owner still pays it out by hand as above. Until it's marked refunded it still counts as held: a later switch back to a dearer fee takes it back (lowering or deleting the row) before billing anything new.
+
 ## Considered Options
 
 - **Keep `processing` and `needsAttention` for a future Seev API.** Rejected: nothing would write them, and every screen would have to handle states that can't happen. They come back with the API, if Seev ships one.

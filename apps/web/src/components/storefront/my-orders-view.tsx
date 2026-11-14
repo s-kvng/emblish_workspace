@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import ProductPhoto from "@/components/storefront/product-photo";
+import SwitchFulfilment from "@/components/storefront/switch-fulfilment-sheet";
 import { authClient } from "@/lib/auth-client";
 import { messageOf } from "@/lib/convex-errors";
 import { cedi } from "@/lib/money";
@@ -58,6 +59,7 @@ const eventLabel: Record<Card["history"][number]["kind"], string> = {
   invoiceReissued: "Invoice corrected",
   ready: "Ready for you",
   deliveryQuoted: "Delivery Fee quoted",
+  fulfilmentSwitched: "Pickup / delivery changed",
 };
 
 /**
@@ -585,10 +587,11 @@ function CardDetail({ card }: { card: Card }) {
             <span className="block text-muted-foreground text-xs">
               {card.fulfilment.deliveryFee === undefined
                 ? "Delivery Fee: we'll text you a quote"
-                : `Delivery Fee ${cedi(card.fulfilment.deliveryFee)}, paid`}
+                : `Delivery Fee ${cedi(card.fulfilment.deliveryFee)}`}
             </span>
           </p>
         )}
+        <SwitchFulfilment card={card} />
       </Section>
 
       {card.kind === "preorder" && card.status === "awaitingArrival" && (
