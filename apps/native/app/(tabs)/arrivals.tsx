@@ -7,20 +7,22 @@ import { Image, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { shortDate, stageLabel } from "@/components/window-labels";
+import { formatGhs } from "@/lib/money";
 
 const emblem = require("@/assets/images/emblem.png");
 
 type Row = FunctionReturnType<typeof api.backOffice.arrivals.toDo>[number];
 
 /**
- * Arrivals: a to-do list of Order Windows ordered from the supplier. Those still to arrive
- * offer "Record arrival"; arrived ones show what was counted, who got what and late arrivals.
+ * Arrivals: a to-do list of Order Windows ordered from the supplier. To do: those still to
+ * arrive ("Record arrival") and arrived ones still to invoice ("Confirm fee & issue invoices").
+ * Invoiced: how many invoices are paid and what's outstanding, plus late arrivals.
  */
 export default function Arrivals() {
   const insets = useSafeAreaInsets();
   const rows = useQuery(api.backOffice.arrivals.toDo);
-  const toDo = rows?.filter((row) => row.stage !== "arrived") ?? [];
-  const arrived = rows?.filter((row) => row.stage === "arrived") ?? [];
+  const toDo = rows?.filter((row) => !row.invoices?.issued) ?? [];
+  const arrived = rows?.filter((row) => row.invoices?.issued) ?? [];
 
   return (
     // The tab bar already clears the bottom inset, so no Container here.
@@ -44,7 +46,7 @@ export default function Arrivals() {
             )}
             {arrived.length > 0 ? (
               <>
-                <SectionTitle>Arrived</SectionTitle>
+                <SectionTitle>Invoiced</SectionTitle>
                 {arrived.map((row) => (
                   <WindowCard key={row.windowId} row={row} />
                 ))}
@@ -67,6 +69,7 @@ function SectionTitle({ children }: { children: string }) {
 
 function WindowCard({ row }: { row: Row }) {
   const done = row.stage === "arrived";
+  const invoices = row.invoices;
   const open = (pathname: "/arrivals/record" | "/arrivals/late") =>
     router.push({ pathname, params: { windowId: row.windowId } });
 
@@ -81,8 +84,32 @@ function WindowCard({ row }: { row: Row }) {
             ? `Arrived ${shortDate(row.at)} · ${row.arrived ?? 0} of ${row.expected} units`
             : `${stageLabel[row.stage]} · ${row.expected} units expected`}
         </Text>
+        {invoices?.issued ? (
+          <View className="mt-2 gap-1">
+            <View className="h-1.5 overflow-hidden rounded-full bg-border">
+              <View
+                className="h-full bg-success"
+                style={{
+                  width: `${invoices.count === 0 ? 100 : (invoices.paid / invoices.count) * 100}%`,
+                }}
+              />
+            </View>
+            <Text className="font-sans text-foreground text-xs">
+              {invoices.paid}/{invoices.count} paid · {formatGhs(invoices.outstanding)} outstanding
+            </Text>
+          </View>
+        ) : null}
       </View>
-      {done ? (
+      {done && !invoices?.issued ? (
+        <View className="gap-2">
+          <Button onPress={() => open("/arrivals/record")}>
+            <Button.Label>Confirm fee & issue invoices</Button.Label>
+          </Button>
+          <Button variant="secondary" size="sm" onPress={() => open("/arrivals/late")}>
+            <Button.Label>Add late arrival</Button.Label>
+          </Button>
+        </View>
+      ) : done ? (
         <View className="flex-row gap-2">
           <Button
             className="flex-1"
@@ -90,7 +117,7 @@ function WindowCard({ row }: { row: Row }) {
             size="sm"
             onPress={() => open("/arrivals/record")}
           >
-            <Button.Label>Who got what</Button.Label>
+            <Button.Label>Invoices</Button.Label>
           </Button>
           <Button
             className="flex-1"

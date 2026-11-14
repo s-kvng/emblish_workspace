@@ -66,7 +66,18 @@ export function deliveryFeeToday(fulfilment: Fulfilment) {
 
 /** Whether the Delivery Fee is still to be quoted by Staff (Elsewhere in Ghana). */
 export function awaitsDeliveryQuote(fulfilment: Fulfilment) {
-  return fulfilment.method === "delivery" && fulfilment.deliveryFee === undefined;
+  return (
+    fulfilment.method === "delivery" &&
+    fulfilment.deliveryFee === undefined &&
+    fulfilment.quotedFee === undefined
+  );
+}
+
+/** The Delivery Fee an invoice bills: one quoted for Elsewhere, else the zone's frozen fee. */
+export function invoicedDeliveryFee(fulfilment: Fulfilment) {
+  return fulfilment.method === "delivery"
+    ? (fulfilment.quotedFee ?? fulfilment.deliveryFee ?? 0)
+    : 0;
 }
 
 /** A Delivery as Customers and Staff read it: everything frozen at Checkout but the zone's id. */
@@ -75,6 +86,8 @@ export const shownDelivery = v.object({
   zoneName: v.string(),
   /** Integer pesewas, paid at Checkout; missing while an Elsewhere fee awaits its quote. */
   deliveryFee: v.optional(v.number()),
+  /** Integer pesewas Staff quoted for Elsewhere in Ghana, billed on an invoice. */
+  quotedFee: v.optional(v.number()),
   recipientName: v.string(),
   recipientPhone: v.string(),
   area: v.string(),

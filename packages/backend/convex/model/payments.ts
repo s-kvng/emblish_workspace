@@ -3,6 +3,7 @@ import type { MutationCtx } from "../_generated/server";
 import { convertHolds, deliveryFeesToday, preorderGroups, storeLines } from "./checkout";
 import { newPickupCode, newReceiptCode, nextReference } from "./codes";
 import { awaitsDeliveryQuote } from "./fulfilment";
+import { pickupLocation } from "./settings";
 import { queueSms } from "./sms";
 import { recordMovement, stockCounts } from "./stock";
 import { windowRowFor } from "./windowLookups";
@@ -42,7 +43,11 @@ export async function settlePayment(
     .withIndex("by_reference", (q) => q.eq("reference", reference))
     .unique();
   if (!session || session.settledAt !== undefined) return;
-  const checkout = await ctx.db.get(session.checkoutId);
+  if (session.invoiceId) {
+    await settleInvoicePayment(ctx, session, session.invoiceId, { reference, amount });
+    return;
+  }
+  const checkout = session.checkoutId && (await ctx.db.get(session.checkoutId));
   const customer = checkout && (await ctx.db.get(checkout.customerId));
   if (!checkout || !customer) return;
 
@@ -146,6 +151,90 @@ export async function settlePayment(
   } else {
     await queueSms(ctx, customer.phone, "paymentNotFilled", { amount, receiptUrl: url });
   }
+}
+
+/**
+ * Settles a verified payment of an invoice paid at `/p/`. It always writes the `payments` row
+ * (its Receipt). A full payment of an unpaid invoice marks it paid and makes the order Ready
+ * once every invoice on it is paid (and no Delivery Fee is still to be quoted), and the payment
+ * SMS carries the Pickup Code when it's for Pickup. A payment of an invoice that's no longer
+ * unpaid, or of a different amount, is all a Refund for an Owner to look at.
+ */
+async function settleInvoicePayment(
+  ctx: Pick<MutationCtx, "db" | "scheduler">,
+  session: Doc<"paymentSessions">,
+  invoiceId: Id<"invoices">,
+  { reference, amount }: { reference: string; amount: number },
+) {
+  const invoice = await ctx.db.get(invoiceId);
+  const order = invoice && (await ctx.db.get(invoice.orderId));
+  const customer = order && (await ctx.db.get(order.customerId));
+  if (!invoice || !order || !customer) return;
+
+  const now = Date.now();
+  await ctx.db.patch(session._id, { settledAt: now });
+  const receiptCode = await newReceiptCode(ctx);
+  const paymentId = await ctx.db.insert("payments", {
+    seevReference: reference,
+    amount,
+    paidAt: now,
+    customerId: customer._id,
+    invoiceId,
+    receiptNumber: await nextReference(ctx, "R"),
+    receiptCode,
+  });
+  const url = receiptUrl(receiptCode);
+
+  const unmatched =
+    invoice.status !== "unpaid"
+      ? `A payment for ${invoice.number}, which is already ${invoice.status}.`
+      : amount !== invoice.total
+        ? `Seev confirmed ${amount} pesewas, but ${invoice.number} totals ${invoice.total}.`
+        : null;
+  if (unmatched) {
+    console.error(`${reference}: ${unmatched}`);
+    await ctx.db.insert("refunds", {
+      paymentId,
+      orderId: order._id,
+      kind: "discretionary",
+      amount,
+      status: "toRefund",
+      returnToStock: false,
+      note: unmatched,
+    });
+    await queueSms(ctx, customer.phone, "paymentUnmatched", { amount, receiptUrl: url });
+    return;
+  }
+
+  await ctx.db.patch(invoice._id, { status: "paid", paymentId, paidAt: now });
+  await ctx.db.insert("orderEvents", {
+    orderId: order._id,
+    kind: "invoicePaid",
+    actor: { kind: "system" },
+    amount,
+  });
+  // A Pre-order can owe a Shipping Fee Invoice and a Delivery Fee Invoice: both must be paid.
+  const othersUnpaid = (
+    await ctx.db
+      .query("invoices")
+      .withIndex("by_order", (q) => q.eq("orderId", order._id))
+      .collect()
+  ).some((other) => other._id !== invoice._id && other.status === "unpaid");
+  const ready =
+    order.status === "paymentDue" && !awaitsDeliveryQuote(order.fulfilment) && !othersUnpaid;
+  if (ready) {
+    await ctx.db.patch(order._id, { status: "ready", readyAt: now });
+    await ctx.db.insert("orderEvents", { orderId: order._id, kind: "ready", actor: { kind: "system" } });
+  }
+  await queueSms(ctx, customer.phone, "invoicePaid", {
+    amount,
+    reference: order.reference,
+    receiptUrl: url,
+    ...(ready && order.fulfilment.method === "pickup"
+      ? { pickup: { code: order.pickupCode, location: await pickupLocation(ctx) } }
+      : {}),
+    ...(ready && order.fulfilment.method === "delivery" ? { delivering: true } : {}),
+  });
 }
 
 /**

@@ -69,12 +69,16 @@ export default function ReceiptView({
         <dl className="space-y-0.5">
           {receipt.customerName && <Row label="Customer" value={receipt.customerName} />}
           <Row label="Phone" value={receipt.phone} />
-          <Row
-            label="Fulfilment"
-            value={fulfilment.method === "pickup" ? "Pickup" : `Delivery · ${fulfilment.zoneName}`}
-          />
+          {receipt.orders.length > 0 && (
+            <Row
+              label="Fulfilment"
+              value={
+                fulfilment.method === "pickup" ? "Pickup" : `Delivery · ${fulfilment.zoneName}`
+              }
+            />
+          )}
         </dl>
-        {fulfilment.method === "pickup" ? (
+        {receipt.orders.length === 0 ? null : fulfilment.method === "pickup" ? (
           receipt.pickupLocation && (
             <p className="mt-1 whitespace-pre-line text-muted-foreground">
               {receipt.pickupLocation}
@@ -151,6 +155,31 @@ export default function ReceiptView({
             )}
           </section>
         ))}
+        {receipt.invoice && (
+          <section>
+            <Rule />
+            <p className="font-semibold">
+              PRE-ORDER {receipt.invoice.orderReference} ·{" "}
+              {receipt.invoice.kind === "shippingFee" ? "SHIPPING FEE" : "DELIVERY FEE"}
+            </p>
+            <p className="text-muted-foreground">Invoice {receipt.invoice.number}</p>
+            <ul className="mt-1 space-y-1">
+              {receipt.invoice.lines.map((line) => (
+                <li key={line.kind}>
+                  <div className="flex justify-between gap-3">
+                    <span>{line.kind === "shippingFee" ? "Shipping Fee" : "Delivery Fee"}</span>
+                    <span>{ghs(line.amount)}</span>
+                  </div>
+                  <p className="text-muted-foreground">
+                    {line.kind === "shippingFee"
+                      ? `${line.units} unit${line.units === 1 ? "" : "s"} @ ${ghs(line.unitFee)}`
+                      : line.zoneName}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
         <Rule />
         <div className="flex justify-between font-bold text-base">
           <span>TOTAL PAID (GHS)</span>
@@ -178,7 +207,9 @@ export default function ReceiptView({
               <br />
             </>
           )}
-          Shipping Fees for Pre-orders are invoiced separately on arrival.
+          {receipt.invoice
+            ? "We texted your Pickup Code, or we text you when it's on its way."
+            : "Shipping Fees for Pre-orders are invoiced separately on arrival."}
         </p>
       </article>
 

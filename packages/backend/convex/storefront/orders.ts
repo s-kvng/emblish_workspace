@@ -10,10 +10,12 @@ import {
   orderLinesWithPhotos,
   refundsOnOrder,
 } from "../model/orders";
+import { invoicesOnOrder } from "../model/invoices";
 import { cancelPreorder as cancelOwnPreorder, selfCancellable } from "../model/refunds";
 import { pickupLocation } from "../model/settings";
 import {
   cancelReason,
+  invoiceKind,
   orderEventKind,
   orderKind,
   orderStatus,
@@ -27,7 +29,7 @@ const card = v.object({
   reference: v.string(),
   kind: orderKind,
   status: orderStatus,
-  /** The Customer has something to do: a Pickup Code to show (an invoice to pay, later). */
+  /** The Customer has something to do: a Pickup Code to show, or an invoice to pay. */
   needsAction: v.boolean(),
   /** Collected, Delivered, Cancelled or Forfeited: shown under "Past orders". */
   past: v.boolean(),
@@ -38,6 +40,13 @@ const card = v.object({
   canCancel: v.boolean(),
   /** On a cancelled Pre-order: whether the Customer or Staff cancelled it. */
   cancelReason: v.optional(cancelReason),
+  /**
+   * The invoices waiting to be paid, oldest first, each opening `/p/<code>`: "Pay GH₵ X · due
+   * <date>". A Pre-order can owe a Shipping Fee Invoice and a Delivery Fee Invoice at once.
+   */
+  invoices: v.array(
+    v.object({ kind: invoiceKind, code: v.string(), total: v.number(), dueAt: v.number() }),
+  ),
   /** Only while the order is Ready for pickup; never once it's handed over. */
   pickupCode: v.optional(v.string()),
   lines: v.array(
@@ -104,15 +113,17 @@ export const mine = query({
       const payment = await ctx.db.get(order.paymentId);
       if (!payment) continue;
       const window = order.orderWindowId ? await ctx.db.get(order.orderWindowId) : null;
+      const unpaid = (await invoicesOnOrder(ctx, order._id)).filter((i) => i.status === "unpaid");
       cards.push({
         orderId: order._id,
         reference: order.reference,
         kind: order.kind,
         status: order.status,
-        needsAction: customerNeedsToAct(order),
+        needsAction: customerNeedsToAct(order) || unpaid.length > 0,
         past: isPastOrder(order),
         canCancel: await selfCancellable(ctx, order),
         ...(order.cancelReason ? { cancelReason: order.cancelReason } : {}),
+        invoices: unpaid.map(({ kind, code, total, dueAt }) => ({ kind, code, total, dueAt })),
         ...(handOverable(order) ? { pickupCode: order.pickupCode } : {}),
         lines: await orderLinesWithPhotos(ctx, order._id),
         payment: {

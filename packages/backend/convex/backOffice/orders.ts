@@ -5,6 +5,11 @@ import { mutation, query } from "../_generated/server";
 import { requireOwner, requireStaff } from "../lib/guards";
 import { fulfilmentAsShown, shownFulfilment } from "../model/fulfilment";
 import {
+  deliveryQuotable,
+  invoicesOnOrder,
+  quoteDeliveryFee as quoteOrderDeliveryFee,
+} from "../model/invoices";
+import {
   alsoReady,
   customerContact,
   dispatchable,
@@ -34,6 +39,8 @@ import { pickupLocation } from "../model/settings";
 import {
   cancelReason,
   deliveryFailureReason,
+  invoiceKind,
+  invoiceStatus,
   orderEventKind,
   orderKind,
   orderStatus,
@@ -126,6 +133,25 @@ export const dispatch = mutation({
   handler: async (ctx, { orderId, riderName }) => {
     const staff = await requireStaff(ctx);
     await dispatchOrder(ctx, staff, orderId, riderName);
+    return null;
+  },
+});
+
+/**
+ * Any Staff member quotes an Elsewhere in Ghana Delivery Fee. It's billed on a Delivery Fee
+ * Invoice texted to the Customer, or, on a Pre-order not yet invoiced, on its coming Shipping
+ * Fee Invoice. The order can go out once every invoice on it is paid.
+ */
+export const quoteDeliveryFee = mutation({
+  args: {
+    orderId: v.id("orders"),
+    /** Integer pesewas. */
+    fee: v.number(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const staff = await requireStaff(ctx);
+    await quoteOrderDeliveryFee(ctx, staff, args);
     return null;
   },
 });
@@ -233,6 +259,18 @@ export const get = query({
         seevReference: v.string(),
       }),
     ),
+    /** Shipping Fee and Delivery Fee Invoices, oldest first. */
+    invoices: v.array(
+      v.object({
+        kind: invoiceKind,
+        number: v.string(),
+        code: v.string(),
+        status: invoiceStatus,
+        total: v.number(),
+        dueAt: v.number(),
+        paidAt: v.optional(v.number()),
+      }),
+    ),
     /** Pesewas flagged for refund from this order's payment and not yet refunded. */
     toRefund: v.number(),
     /** On a cancelled Pre-order: whether the Customer or Staff cancelled it. */
@@ -245,6 +283,8 @@ export const get = query({
     canRefundAfterHandover: v.boolean(),
     /** Pesewas of the paid Delivery Fee not yet flagged for refund. */
     refundableDeliveryFee: v.number(),
+    /** Elsewhere in Ghana with no fee yet: Staff can quote it. */
+    canQuoteDeliveryFee: v.boolean(),
     history: v.array(
       v.object({
         kind: orderEventKind,
@@ -278,7 +318,21 @@ export const get = query({
     if (!order || !customer) {
       throw new ConvexError({ code: "NOT_FOUND", message: "That order doesn't exist." });
     }
-    const payment = await ctx.db.get(order.paymentId);
+    const invoices = await invoicesOnOrder(ctx, order._id);
+    // The Item Payment, then each paid invoice's payment.
+    const payments = [];
+    for (const paymentId of [order.paymentId, ...invoices.flatMap((i) => i.paymentId ?? [])]) {
+      const payment = await ctx.db.get(paymentId);
+      if (payment) {
+        payments.push({
+          receiptNumber: payment.receiptNumber,
+          receiptCode: payment.receiptCode,
+          amount: payment.amount,
+          paidAt: payment.paidAt,
+          seevReference: payment.seevReference,
+        });
+      }
+    }
     return {
       orderId: order._id,
       kind: order.kind,
@@ -290,23 +344,23 @@ export const get = query({
       pickupLocation: await pickupLocation(ctx),
       pickupCode: order.pickupCode,
       lines: await orderLines(ctx, order._id),
-      payments: payment
-        ? [
-            {
-              receiptNumber: payment.receiptNumber,
-              receiptCode: payment.receiptCode,
-              amount: payment.amount,
-              paidAt: payment.paidAt,
-              seevReference: payment.seevReference,
-            },
-          ]
-        : [],
+      payments,
+      invoices: invoices.map(({ kind, number, code, status, total, dueAt, paidAt }) => ({
+        kind,
+        number,
+        code,
+        status,
+        total,
+        dueAt,
+        ...(paidAt !== undefined ? { paidAt } : {}),
+      })),
       toRefund: await owedBack(ctx, order),
       ...(order.cancelReason ? { cancelReason: order.cancelReason } : {}),
       canCancelUnits: cancellable(order),
       canCancelPreorder: await preorderCancellable(ctx, order),
       canRefundAfterHandover: handedOver(order),
       refundableDeliveryFee: await refundableDeliveryFee(ctx, order),
+      canQuoteDeliveryFee: deliveryQuotable(order),
       history: await orderHistory(ctx, order._id),
       primaryAction: primaryAction(order),
     };

@@ -21,7 +21,7 @@ import {
 } from "@/components/order-labels";
 import { ScreenHeader } from "@/components/screen-header";
 import { refusalMessage } from "@/lib/form-errors";
-import { formatGhs } from "@/lib/money";
+import { formatGhs, parseGhs } from "@/lib/money";
 import { useStaffMember } from "@/lib/staff-member";
 
 const eventLabel = {
@@ -35,9 +35,40 @@ const eventLabel = {
   arrived: "Arrived",
   refundFlagged: "Refund flagged",
   refunded: "Refunded",
+  invoiced: "Invoiced",
+  invoicePaid: "Invoice paid",
+  invoiceReissued: "Invoice voided & reissued",
+  ready: "Ready",
+  deliveryQuoted: "Delivery Fee quoted",
 } as const;
 
+const invoiceStatusLabel = { unpaid: "Unpaid", paid: "Paid", void: "Void" } as const;
+
 type Order = FunctionReturnType<typeof api.backOffice.orders.get>;
+
+/** The status chip: "Delivery Fee due" while only a Delivery Fee Invoice is left to pay. */
+function statusText(order: Order) {
+  const unpaid = order.invoices.filter((invoice) => invoice.status === "unpaid");
+  if (
+    order.status === "paymentDue" &&
+    unpaid.length > 0 &&
+    unpaid.every((invoice) => invoice.kind === "deliveryFee")
+  ) {
+    return "Delivery Fee due";
+  }
+  return orderStatusLabel[order.status];
+}
+
+/** How the Delivery Fee stands, under the address. */
+function deliveryFeeText(fulfilment: Extract<Order["fulfilment"], { method: "delivery" }>) {
+  if (fulfilment.deliveryFee !== undefined) {
+    return `Delivery Fee ${formatGhs(fulfilment.deliveryFee)}, paid at Checkout`;
+  }
+  if (fulfilment.quotedFee !== undefined) {
+    return `Delivery Fee ${formatGhs(fulfilment.quotedFee)}, quoted (Elsewhere in Ghana)`;
+  }
+  return "Delivery Fee to be quoted (Elsewhere in Ghana)";
+}
 
 // An order that's gone (or a bad link) shows the router's error screen with Retry.
 export { ErrorBoundary } from "expo-router";
@@ -66,7 +97,7 @@ export default function OrderDetailScreen() {
           <View className="mt-2 flex-row gap-2">
             <Chip>{order.kind === "preorder" ? "Pre-order" : "Store Order"}</Chip>
             <Chip>
-              {orderStatusLabel[order.status]}
+              {statusText(order)}
               {order.cancelReason === "customer"
                 ? " by Customer"
                 : order.cancelReason === "staff"
@@ -123,10 +154,9 @@ export default function OrderDetailScreen() {
                 </Text>
               ) : null}
               <Text className="mt-2 font-sans text-muted text-sm">
-                {order.fulfilment.deliveryFee === undefined
-                  ? "Delivery Fee to be quoted (Elsewhere in Ghana)"
-                  : `Delivery Fee ${formatGhs(order.fulfilment.deliveryFee)}, paid at Checkout`}
+                {deliveryFeeText(order.fulfilment)}
               </Text>
+              {order.canQuoteDeliveryFee ? <QuoteDeliveryFee order={order} /> : null}
             </Section>
           )}
 
@@ -172,6 +202,32 @@ export default function OrderDetailScreen() {
               </View>
             ))}
           </Section>
+
+          {order.invoices.length > 0 ? (
+            <Section title="Invoices">
+              {order.invoices.map((invoice) => (
+                <View key={invoice.number} className="py-1">
+                  <View className="flex-row justify-between">
+                    <Text
+                      className={`font-sans-medium text-foreground ${invoice.status === "void" ? "line-through" : ""}`}
+                    >
+                      {invoice.number} ·{" "}
+                      {invoice.kind === "shippingFee" ? "Shipping Fee" : "Delivery Fee"}
+                    </Text>
+                    <Text className="font-sans-medium text-foreground">
+                      {formatGhs(invoice.total)}
+                    </Text>
+                  </View>
+                  <Text className="font-sans text-muted text-xs">
+                    {invoiceStatusLabel[invoice.status]} ·{" "}
+                    {invoice.paidAt !== undefined
+                      ? `paid ${new Date(invoice.paidAt).toLocaleDateString("en-GH")}`
+                      : `due ${new Date(invoice.dueAt).toLocaleDateString("en-GH")}`}
+                  </Text>
+                </View>
+              ))}
+            </Section>
+          ) : null}
 
           <OrderActions order={order} />
 
@@ -243,6 +299,54 @@ export default function OrderDetailScreen() {
           <DeliveryOutcomeBar orderId={order.orderId} />
         </StickyBar>
       ) : null}
+    </View>
+  );
+}
+
+/**
+ * Elsewhere in Ghana: Staff type the Delivery Fee they've worked out. It's texted to the Customer
+ * on its own Delivery Fee Invoice, or rides on a Pre-order's coming Shipping Fee Invoice.
+ */
+function QuoteDeliveryFee({ order }: { order: Order }) {
+  const quote = useMutation(api.backOffice.orders.quoteDeliveryFee);
+  const [feeText, setFeeText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const fee = parseGhs(feeText);
+  const valid = fee !== undefined && Number.isFinite(fee) && fee > 0;
+
+  const submit = async () => {
+    if (!valid) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await quote({ orderId: order.orderId, fee });
+      setFeeText("");
+    } catch (refused) {
+      setError(refusalMessage(refused));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <View className="mt-3 gap-2 border-border border-t pt-3">
+      <Input
+        value={feeText}
+        onChangeText={setFeeText}
+        placeholder="Delivery Fee in GH₵"
+        accessibilityLabel="Delivery Fee in GH₵"
+        keyboardType="decimal-pad"
+      />
+      <Text className="font-sans text-muted text-xs">
+        {order.status === "awaitingArrival"
+          ? "It goes on the Shipping Fee Invoice when the goods arrive."
+          : "The Customer gets a Delivery Fee Invoice by SMS. It can go out once it's paid."}
+      </Text>
+      {error ? <Text className="font-sans-semibold text-danger text-sm">{error}</Text> : null}
+      <Button onPress={submit} isDisabled={busy || !valid}>
+        <Button.Label>Quote Delivery Fee</Button.Label>
+      </Button>
     </View>
   );
 }

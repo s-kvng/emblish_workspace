@@ -64,22 +64,89 @@ async function takeUnits(
   };
 }
 
+/** Pesewas of an order's Delivery Fee paid on one payment and not yet flagged for refund. */
+export type RefundableFee = { paymentId: Id<"payments">; amount: number };
+
 /**
- * Pesewas of the order's Delivery Fee that were paid and not yet flagged for refund. A Store
- * Order's fee is paid at Checkout once known; an Elsewhere fee still to quote has none.
+ * Each payment the order's Delivery Fee was paid on, with what's left to refund of it: a fixed
+ * zone's fee paid at Checkout with a Store Order, and any Delivery Fee line on a paid invoice (a
+ * Delivery Fee Invoice, or a Pre-order's Shipping Fee Invoice). An unpaid fee has none.
  */
-export async function refundableDeliveryFee(ctx: Pick<QueryCtx, "db">, order: Doc<"orders">) {
-  // A Pre-order's Delivery Fee is billed on its Shipping Fee Invoice, so none is paid yet.
-  if (order.kind === "preorder" || order.fulfilment.method !== "delivery") return 0;
-  const paid = order.fulfilment.deliveryFee ?? 0;
-  const refunds = await ctx.db
-    .query("refunds")
-    .withIndex("by_payment", (q) => q.eq("paymentId", order.paymentId))
+export async function refundableDeliveryFees(
+  ctx: Pick<QueryCtx, "db">,
+  order: Doc<"orders">,
+): Promise<RefundableFee[]> {
+  const { fulfilment } = order;
+  if (fulfilment.method !== "delivery") return [];
+  const paid: RefundableFee[] = [];
+  if (order.kind === "store" && fulfilment.deliveryFee) {
+    paid.push({ paymentId: order.paymentId, amount: fulfilment.deliveryFee });
+  }
+  const invoices = await ctx.db
+    .query("invoices")
+    .withIndex("by_order", (q) => q.eq("orderId", order._id))
     .collect();
-  const flagged = refunds
-    .filter((refund) => refund.orderId === order._id)
-    .reduce((sum, refund) => sum + (refund.deliveryFee ?? 0), 0);
-  return Math.max(0, paid - flagged);
+  for (const invoice of invoices) {
+    const line = invoice.lines.find((l) => l.kind === "deliveryFee");
+    if (invoice.status === "paid" && invoice.paymentId && line) {
+      paid.push({ paymentId: invoice.paymentId, amount: line.amount });
+    }
+  }
+  const left = [];
+  for (const { paymentId, amount } of paid) {
+    const refunds = await ctx.db
+      .query("refunds")
+      .withIndex("by_payment", (q) => q.eq("paymentId", paymentId))
+      .collect();
+    const flagged = refunds
+      .filter((refund) => refund.orderId === order._id)
+      .reduce((sum, refund) => sum + (refund.deliveryFee ?? 0), 0);
+    if (amount > flagged) left.push({ paymentId, amount: amount - flagged });
+  }
+  return left;
+}
+
+/** Pesewas of the order's Delivery Fee that were paid and not yet flagged for refund. */
+export async function refundableDeliveryFee(ctx: Pick<QueryCtx, "db">, order: Doc<"orders">) {
+  return (await refundableDeliveryFees(ctx, order)).reduce((sum, fee) => sum + fee.amount, 0);
+}
+
+/**
+ * The part of a Refund paid back from the order's Item Payment (its units, and a Delivery Fee
+ * paid with them), and a fee-only Refund for each Delivery Fee paid on an invoice, each against
+ * its own payment so the Owner sees the right Receipt. Rows coming to GH₵0 are skipped.
+ */
+async function flagRefunds(
+  ctx: Pick<MutationCtx, "db">,
+  order: Doc<"orders">,
+  fees: RefundableFee[],
+  units: { amount: number; lines: RefundLine[]; returnToStock: boolean },
+  row: Pick<Doc<"refunds">, "kind" | "note" | "flaggedBy">,
+) {
+  const withItems = fees.find((fee) => fee.paymentId === order.paymentId)?.amount ?? 0;
+  if (units.amount + withItems > 0) {
+    await ctx.db.insert("refunds", {
+      ...row,
+      paymentId: order.paymentId,
+      orderId: order._id,
+      amount: units.amount + withItems,
+      ...(withItems > 0 ? { deliveryFee: withItems } : {}),
+      status: "toRefund",
+      returnToStock: units.returnToStock,
+      lines: units.lines,
+    });
+  }
+  for (const fee of fees.filter((f) => f.paymentId !== order.paymentId)) {
+    await ctx.db.insert("refunds", {
+      ...row,
+      paymentId: fee.paymentId,
+      orderId: order._id,
+      amount: fee.amount,
+      deliveryFee: fee.amount,
+      status: "toRefund",
+      returnToStock: false,
+    });
+  }
 }
 
 /** Whether every unit on the order has been cancelled or refunded. */
@@ -137,19 +204,15 @@ export async function cancelUnits(
   }
   const reason = cleanNote(note);
   const wholeOrder = await nothingKept(ctx, order._id);
-  const deliveryFee = wholeOrder ? await refundableDeliveryFee(ctx, order) : 0;
-  await ctx.db.insert("refunds", {
-    paymentId: order.paymentId,
-    orderId: order._id,
-    kind: "cancelledLine",
-    amount: taken.amount + deliveryFee,
-    ...(deliveryFee > 0 ? { deliveryFee } : {}),
-    status: "toRefund",
-    returnToStock,
-    lines: taken.lines,
-    flaggedBy: actor._id,
-    ...(reason ? { note: reason } : {}),
-  });
+  const fees = wholeOrder ? await refundableDeliveryFees(ctx, order) : [];
+  const deliveryFee = fees.reduce((sum, fee) => sum + fee.amount, 0);
+  await flagRefunds(
+    ctx,
+    order,
+    fees,
+    { amount: taken.amount, lines: taken.lines, returnToStock },
+    { kind: "cancelledLine", flaggedBy: actor._id, ...(reason ? { note: reason } : {}) },
+  );
   await ctx.db.insert("orderEvents", {
     orderId: order._id,
     kind: "unitsCancelled",
@@ -317,7 +380,8 @@ export async function refundAfterHandover(
   }
   const reason = cleanNote(note);
   if (!reason) refuse("REASON_REQUIRED", "Say why you're refunding.");
-  const deliveryFee = withDeliveryFee ? await refundableDeliveryFee(ctx, order) : 0;
+  const fees = withDeliveryFee ? await refundableDeliveryFees(ctx, order) : [];
+  const deliveryFee = fees.reduce((sum, fee) => sum + fee.amount, 0);
   const taken = await takeUnits(ctx, order, lines);
   const amount = taken.amount + deliveryFee;
   if (amount === 0) refuse("NOTHING_TO_REFUND", "Pick units or a fee to refund.");
@@ -333,19 +397,18 @@ export async function refundAfterHandover(
       });
     }
   }
-  await ctx.db.insert("refunds", {
-    paymentId: order.paymentId,
-    orderId: order._id,
-    kind: "afterHandover",
-    amount,
-    status: "toRefund",
-    // A fee-only refund puts nothing back, whatever was ticked.
-    returnToStock: returnToStock && taken.units > 0,
-    lines: taken.lines,
-    ...(deliveryFee > 0 ? { deliveryFee } : {}),
-    flaggedBy: owner._id,
-    note: reason,
-  });
+  await flagRefunds(
+    ctx,
+    order,
+    fees,
+    {
+      amount: taken.amount,
+      lines: taken.lines,
+      // A fee-only refund puts nothing back, whatever was ticked.
+      returnToStock: returnToStock && taken.units > 0,
+    },
+    { kind: "afterHandover", flaggedBy: owner._id, note: reason },
+  );
   await ctx.db.insert("orderEvents", {
     orderId: order._id,
     kind: "refundFlagged",
