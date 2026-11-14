@@ -144,10 +144,13 @@ function Row({ label, amount, bold }: { label: string; amount: number; bold?: bo
   );
 }
 
-/** d7, d13, d15 and d28 reminders, then d30 in red: filled once the clock has reached them. */
+/**
+ * d7, d13, d15 and d28 reminders, filled once that reminder was sent; then d30 in red, filled once
+ * the clock reaches it unpaid.
+ */
 function ReminderDots({ reminders }: { reminders: Sheet["reminders"] }) {
   return (
-    <View className="flex-row gap-3" accessibilityLabel="Reminder days reached">
+    <View className="flex-row gap-3" accessibilityLabel="Reminders sent">
       {reminders.map(({ day, reached }) => {
         const forfeit = day === 30;
         return (

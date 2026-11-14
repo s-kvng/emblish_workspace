@@ -18,6 +18,7 @@ import {
 } from "./invoices";
 import { refundsOnOrder } from "./orders";
 import { type RefundableFee, refundableDeliveryFees } from "./refunds";
+import { nextUncollectedReminderOn } from "./reminderSchedule";
 import { pickupLocation } from "./settings";
 import { ordersUrl, queueSms } from "./sms";
 
@@ -428,16 +429,30 @@ export async function switchFulfilment(
       ).some((invoice) => invoice.status === "unpaid");
     if (owing && status === "ready") {
       status = "paymentDue";
-      await ctx.db.patch(order._id, { status, readyAt: undefined });
+      await ctx.db.patch(order._id, { status, readyAt: undefined, nextReminderOn: undefined });
     } else if (!owing && status === "paymentDue") {
       status = "ready";
-      await ctx.db.patch(order._id, { status, readyAt: Date.now() });
+      const now = Date.now();
+      await ctx.db.patch(order._id, {
+        status,
+        readyAt: now,
+        nextReminderOn: nextUncollectedReminderOn({ status, fulfilment, readyAt: now }, now),
+      });
       await ctx.db.insert("orderEvents", {
         orderId: order._id,
         kind: "ready",
         actor,
       });
     }
+  }
+  if (status === "ready" && order.status === "ready") {
+    // Still Ready under the new fulfilment: uncollected reminders start or stop with Pickup.
+    await ctx.db.patch(order._id, {
+      nextReminderOn: nextUncollectedReminderOn(
+        { status, fulfilment, readyAt: order.readyAt },
+        Date.now(),
+      ),
+    });
   }
   if (status === "ready" && fulfilment.method === "pickup") {
     await queueSms(ctx, customer.phone, "readyForPickup", {

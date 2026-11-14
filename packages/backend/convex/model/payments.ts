@@ -4,6 +4,7 @@ import { convertHolds, deliveryFeesToday, preorderGroups, storeLines } from "./c
 import { newPickupCode, newReceiptCode, nextReference } from "./codes";
 import { awaitsDeliveryQuote } from "./fulfilment";
 import { pickupLocation } from "./settings";
+import { nextUncollectedReminderOn } from "./reminderSchedule";
 import { queueSms } from "./sms";
 import { recordMovement, stockCounts } from "./stock";
 import { windowRowFor } from "./windowLookups";
@@ -223,7 +224,11 @@ async function settleInvoicePayment(
   const ready =
     order.status === "paymentDue" && !awaitsDeliveryQuote(order.fulfilment) && !othersUnpaid;
   if (ready) {
-    await ctx.db.patch(order._id, { status: "ready", readyAt: now });
+    await ctx.db.patch(order._id, {
+      status: "ready",
+      readyAt: now,
+      nextReminderOn: nextUncollectedReminderOn({ ...order, status: "ready", readyAt: now }, now),
+    });
     await ctx.db.insert("orderEvents", { orderId: order._id, kind: "ready", actor: { kind: "system" } });
   }
   await queueSms(ctx, customer.phone, "invoicePaid", {
@@ -356,7 +361,14 @@ async function createStoreOrder(
     pickupCode,
     ...(awaitsDeliveryQuote(checkout.fulfilment)
       ? { status: "paymentDue" as const }
-      : { status: "ready" as const, readyAt: now }),
+      : {
+          status: "ready" as const,
+          readyAt: now,
+          nextReminderOn: nextUncollectedReminderOn(
+            { status: "ready", fulfilment: checkout.fulfilment, readyAt: now },
+            now,
+          ),
+        }),
   });
   await ctx.db.insert("orderEvents", { orderId, kind: "paid", actor: { kind: "system" } });
   for (const line of lines) {

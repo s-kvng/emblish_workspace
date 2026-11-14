@@ -162,24 +162,25 @@ describe("The invoice sheet", () => {
     expect(sheet.dueAt - sheet.clockStartedAt).toBe(14 * 24 * 60 * 60 * 1000);
   });
 
-  test("reminder dots light up as the clock passes days 7, 13, 15 and 28, then 30 can Forfeit", async () => {
+  test("reminder dots wait for their reminder to be sent; the day 30 dot for the clock", async () => {
     const { t, ama, invoiceId } = await kofi2Invoiced();
     await t.run((ctx) =>
       ctx.db.patch(invoiceId, {
-        clockStartedAt: Date.now() - 14 * 24 * 60 * 60 * 1000,
+        clockStartedAt: Date.now() - 30 * 24 * 60 * 60 * 1000,
       }),
     );
 
     const sheet = await ama.query(api.backOffice.invoices.sheet, { invoiceId });
 
+    // No reminders went out (the reminders job is tested in system/reminders.test.ts).
     expect(sheet.reminders).toEqual([
-      { day: 7, reached: true },
-      { day: 13, reached: true },
+      { day: 7, reached: false },
+      { day: 13, reached: false },
       { day: 15, reached: false },
       { day: 28, reached: false },
-      { day: 30, reached: false },
+      { day: 30, reached: true },
     ]);
-    expect(sheet.state).toBe("due");
+    expect(sheet.state).toBe("forfeitable");
   });
 
   test("a paid invoice shows its payment", async () => {
@@ -230,7 +231,7 @@ describe("Void & reissue, what it won't do", () => {
 });
 
 describe("The invoice sheet once paid", () => {
-  test("reminder dots stop at the day it was paid", async () => {
+  test("the day 30 dot never lights once it was paid before then", async () => {
     const { t, ama, codes, invoiceId } = await kofi2Invoiced();
     await t.action(api.storefront.invoices.pay, { code: codes.kofi2 });
     seev.setStatus(seev.sessions[seev.sessions.length - 1]!.reference, "completed");
@@ -246,6 +247,6 @@ describe("The invoice sheet once paid", () => {
 
     const sheet = await ama.query(api.backOffice.invoices.sheet, { invoiceId });
 
-    expect(sheet.reminders.filter((dot) => dot.reached).map((dot) => dot.day)).toEqual([7]);
+    expect(sheet.reminders.filter((dot) => dot.reached).map((dot) => dot.day)).toEqual([]);
   });
 });

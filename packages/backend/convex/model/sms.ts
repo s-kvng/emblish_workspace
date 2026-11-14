@@ -78,6 +78,20 @@ type ArrivedSmsArgs = {
   ordersUrl: string;
 };
 
+/** What the invoice reminders say about one unpaid invoice. */
+type InvoiceReminderArgs = {
+  kind: "shippingFee" | "deliveryFee";
+  reference: string;
+  total: number;
+  /** From `dayMonth`. */
+  due: string;
+  payUrl: string;
+};
+
+function feeName(kind: InvoiceReminderArgs["kind"]) {
+  return kind === "shippingFee" ? "Shipping Fee" : "Delivery Fee";
+}
+
 function units(count: number) {
   return count === 1 ? "unit" : "units";
 }
@@ -346,6 +360,73 @@ export const smsTemplates = {
       due: "14 Nov",
       payUrl: "https://emblish.com/p/K7Q2M9XA",
     },
+  }),
+  // #19 rows 6a and 7: day 7 of an unpaid invoice.
+  invoiceReminder: template<InvoiceReminderArgs>({
+    render: ({ kind, reference, total, due, payUrl }) =>
+      `Reminder: ${ghs(total)} ${feeName(kind)} for ${reference} is due ${due}. Pay: ${payUrl}`,
+    example: {
+      kind: "shippingFee",
+      reference: "P-1042",
+      total: 12000,
+      due: "14 Nov",
+      payUrl: "https://emblish.com/p/K7Q2M9XA",
+    },
+  }),
+  // #19 row 6b: day 13, the day before it's due.
+  invoiceDueTomorrow: template<InvoiceReminderArgs>({
+    render: ({ kind, reference, total, payUrl }) =>
+      `${ghs(total)} ${feeName(kind)} for ${reference} is due tomorrow. Pay: ${payUrl}`,
+    example: {
+      kind: "shippingFee",
+      reference: "P-1042",
+      total: 12000,
+      due: "14 Nov",
+      payUrl: "https://emblish.com/p/K7Q2M9XA",
+    },
+  }),
+  // #19 rows 6c and 7: day 15, overdue. Only a Shipping Fee can lead to Forfeit after 30 days.
+  invoiceOverdue: template<InvoiceReminderArgs>({
+    render: ({ kind, reference, total, payUrl }) =>
+      `${ghs(total)} ${feeName(kind)} for ${reference} is overdue. ` +
+      (kind === "shippingFee" ? "Orders unpaid after 30 days may be cancelled. " : "") +
+      `Pay: ${payUrl}`,
+    example: {
+      kind: "shippingFee",
+      reference: "P-1042",
+      total: 12000,
+      due: "14 Nov",
+      payUrl: "https://emblish.com/p/K7Q2M9XA",
+    },
+  }),
+  // #19 rows 6d and 7: day 28. A Shipping Fee one names the day it can be Forfeited after
+  // (first issue + 30); a Delivery Fee is never Forfeited, so the goods just wait for it.
+  invoiceFinalReminder: template<InvoiceReminderArgs & { unpaidBy: string }>({
+    render: ({ kind, reference, total, unpaidBy, payUrl }) =>
+      kind === "shippingFee"
+        ? `Final reminder: ${ghs(total)} for ${reference} is overdue. If unpaid by ${unpaidBy} ` +
+          `the order may be cancelled and your item payment kept. Pay: ${payUrl}`
+        : `Final reminder: ${ghs(total)} Delivery Fee for ${reference} is still unpaid. ` +
+          `We will deliver once it is paid. Pay: ${payUrl}`,
+    example: {
+      kind: "shippingFee",
+      reference: "P-1042",
+      total: 12000,
+      due: "14 Nov",
+      unpaidBy: "30 Nov",
+      payUrl: "https://emblish.com/p/K7Q2M9XA",
+    },
+  }),
+  // #19 row 15: a Pickup order still waiting at Ready, days 3, 7, 14 and 28 after.
+  uncollectedReminder: template<{ reference: string; pickupCode: string; location: string }>({
+    render: ({ reference, pickupCode, location: where }) =>
+      `Reminder: ${reference} is waiting for you. Pickup code: ${pickupCode}. ${location(where)}.`,
+    example: {
+      reference: "P-1042",
+      pickupCode: "482913",
+      location: "Osu, Oxford Street, opposite the Shell. Mon-Sat 9am-6pm",
+    },
+    redact: (body) => body.replace(/Pickup code: \d{6}/, "Pickup code: ******"),
   }),
   // #19 row 8: Ready for Pickup without a payment, such as a GHS 0 Shipping Fee.
   readyForPickup: template<{

@@ -79,6 +79,11 @@ export const smsTemplate = v.union(
   v.literal("invoicePaid"),
   v.literal("invoiceReplaced"),
   v.literal("deliveryFeeInvoice"),
+  v.literal("invoiceReminder"),
+  v.literal("invoiceDueTomorrow"),
+  v.literal("invoiceOverdue"),
+  v.literal("invoiceFinalReminder"),
+  v.literal("uncollectedReminder"),
 );
 /** A Checkout's life: `pending` while it awaits payment, then paid, or expired / released unpaid. */
 export const checkoutStatus = v.union(
@@ -527,6 +532,12 @@ export default defineSchema({
     pickupCode: v.string(),
     status: orderStatus,
     readyAt: v.optional(v.number()),
+    /**
+     * 00:00 GMT on the day its next uncollected reminder is due, for the daily cron: Pickup
+     * orders at Ready only, counted from `readyAt`. The cron clears it once none are left or it
+     * finds the order no longer waiting at Ready for Pickup.
+     */
+    nextReminderOn: v.optional(v.number()),
     /** Set on a cancelled Pre-order: who cancelled it. */
     cancelReason: v.optional(cancelReason),
   })
@@ -535,7 +546,8 @@ export default defineSchema({
     .index("by_orderWindow", ["orderWindowId"])
     .index("by_payment", ["paymentId"])
     .index("by_status", ["status"])
-    .index("by_pickupCode_and_status", ["pickupCode", "status"]),
+    .index("by_pickupCode_and_status", ["pickupCode", "status"])
+    .index("by_nextReminderOn", ["nextReminderOn"]),
 
   // An order's lines, with names and prices frozen at payment.
   orderLines: defineTable({
@@ -631,10 +643,19 @@ export default defineSchema({
     voidReason: v.optional(v.string()),
     supersedesId: v.optional(v.id("invoices")),
     supersededById: v.optional(v.id("invoices")),
+    /**
+     * 00:00 GMT on the day its next reminder is due, for the daily cron, which clears it once
+     * none are left or it finds the invoice no longer owed. Moved to the replacement on Void &
+     * reissue.
+     */
+    nextReminderOn: v.optional(v.number()),
+    /** The clock days (7, 13, 15, 28) whose reminders were sent; carried on reissue. */
+    remindersSent: v.optional(v.array(v.number())),
   })
     .index("by_order", ["orderId"])
     .index("by_code", ["code"])
-    .index("by_status_and_clock", ["status", "clockStartedAt"]),
+    .index("by_status_and_clock", ["status", "clockStartedAt"])
+    .index("by_nextReminderOn", ["nextReminderOn"]),
 
   // One row per reference sequence (`S`, `R`, later `P` and `INV`), bumped where it's used.
   counters: defineTable({
