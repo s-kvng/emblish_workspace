@@ -310,6 +310,24 @@ export const smsTemplates = {
       payUrl: "https://emblish.com/p/K7Q2M9XA",
     },
   }),
+  // #19 row 5: Void & reissue replaced the invoice; the due date is kept.
+  invoiceReplaced: template<{
+    reference: string;
+    total: number;
+    /** From `dayMonth`. */
+    due: string;
+    payUrl: string;
+  }>({
+    render: ({ reference, total, due, payUrl }) =>
+      `Your invoice for ${reference} has been corrected. New total ${ghs(total)}, ` +
+      `still due ${due}. Pay: ${payUrl}`,
+    example: {
+      reference: "P-1042",
+      total: 11000,
+      due: "14 Nov",
+      payUrl: "https://emblish.com/p/K7Q2M9XA",
+    },
+  }),
   // #19 row 8: Ready for Pickup without a payment, such as a GHS 0 Shipping Fee.
   readyForPickup: template<{
     reference: string;

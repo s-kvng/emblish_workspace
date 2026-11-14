@@ -5,6 +5,7 @@ import { Button } from "@emblish_workspace/ui/components/button";
 import { type Preloaded, useAction, usePreloadedQuery } from "convex/react";
 import type { Route } from "next";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { messageOf } from "@/lib/convex-errors";
@@ -61,7 +62,14 @@ export default function InvoiceView({
   const [checked, setChecked] = useState(!returnedFromSeev);
   const [now] = useState(() => Date.now());
   const refreshed = useRef(false);
+  const router = useRouter();
   const code = invoice?.code;
+  const replacedByCode = invoice?.status === "void" ? invoice.replacedByCode : undefined;
+
+  // Voided and reissued while open: follow to the invoice to pay now, as the page load does.
+  useEffect(() => {
+    if (replacedByCode) router.replace(`/p/${replacedByCode}` as Route);
+  }, [replacedByCode, router]);
 
   // Back from Seev: ask Seev now rather than waiting for the next poll.
   useEffect(() => {

@@ -1,6 +1,6 @@
 import { api } from "@emblish_workspace/backend/convex/_generated/api";
 import { preloadedQueryResult, preloadQuery } from "convex/nextjs";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import InvoiceView from "@/components/storefront/invoice-view";
 
@@ -20,6 +20,11 @@ export default async function InvoicePage({ params, searchParams }: PageProps<"/
     { code },
     { url: ENV.NEXT_PUBLIC_CONVEX_URL },
   );
-  if (preloadedQueryResult(preloaded) === null) notFound();
+  const invoice = preloadedQueryResult(preloaded);
+  if (invoice === null) notFound();
+  // A voided invoice's link goes to the live end of its chain: the invoice to pay now.
+  if (invoice.status === "void" && invoice.replacedByCode) {
+    redirect(`/p/${invoice.replacedByCode}${from === "seev" ? "?from=seev" : ""}`);
+  }
   return <InvoiceView preloaded={preloaded} returnedFromSeev={from === "seev"} />;
 }

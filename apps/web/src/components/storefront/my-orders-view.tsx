@@ -55,6 +55,7 @@ const eventLabel: Record<Card["history"][number]["kind"], string> = {
   refunded: "Refund sent",
   invoiced: "Shipping Fee invoice sent",
   invoicePaid: "Invoice paid",
+  invoiceReissued: "Invoice corrected",
   ready: "Ready for you",
 };
 

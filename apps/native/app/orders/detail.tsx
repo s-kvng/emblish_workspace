@@ -37,6 +37,7 @@ const eventLabel = {
   refunded: "Refunded",
   invoiced: "Shipping Fee invoiced",
   invoicePaid: "Invoice paid",
+  invoiceReissued: "Invoice voided & reissued",
   ready: "Ready",
 } as const;
 

@@ -2,47 +2,17 @@ import { ConvexError, v } from "convex/values";
 
 import { internal } from "../_generated/api";
 import { action, query } from "../_generated/server";
-import { shownFulfilment } from "../model/fulfilment";
-import { findInvoiceByCode, invoiceDocument, payUrl } from "../model/invoices";
+import {
+  findInvoiceByCode,
+  invoiceDocument,
+  invoiceDocumentFields,
+  payUrl,
+} from "../model/invoices";
 import { createSession, SeevUnavailable } from "../model/seev";
-import { invoiceKind, invoiceLine, invoiceStatus } from "../schema";
 
 const invoiceDocumentValidator = v.object({
-  kind: invoiceKind,
-  /** `INV-0001`. */
-  number: v.string(),
-  code: v.string(),
-  status: invoiceStatus,
-  issuedAt: v.number(),
-  /** The first issue date; a reissue keeps it. */
-  clockStartedAt: v.number(),
-  /** 14 days after `clockStartedAt`. */
-  dueAt: v.number(),
-  orderReference: v.string(),
-  customerName: v.optional(v.string()),
-  fulfilment: shownFulfilment,
-  pickupLocation: v.string(),
-  /** The order's lines: units that arrived, and any that didn't (refunded separately). */
-  items: v.array(
-    v.object({
-      productName: v.string(),
-      variantLabel: v.string(),
-      arrived: v.number(),
-      missing: v.number(),
-    }),
-  ),
-  lines: v.array(invoiceLine),
-  /** Pesewas: the AMOUNT DUE. */
-  total: v.number(),
-  /** The Item Payment's Receipt, for the footer. */
-  itemReceiptNumber: v.optional(v.string()),
-  /** Set once paid: the PAID stamp and its Receipt. */
-  paid: v.optional(
-    v.object({ paidAt: v.number(), receiptNumber: v.string(), receiptCode: v.string() }),
-  ),
-  /** Set on a voided invoice. */
-  voidReason: v.optional(v.string()),
-  /** The live invoice that replaced a voided one. */
+  ...invoiceDocumentFields,
+  /** On a voided invoice: the `/p/` code of the live end of its chain, where the page redirects. */
   replacedByCode: v.optional(v.string()),
 });
 

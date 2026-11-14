@@ -77,6 +77,7 @@ export const smsTemplate = v.union(
   v.literal("shippingFeeInvoice"),
   v.literal("readyForPickup"),
   v.literal("invoicePaid"),
+  v.literal("invoiceReplaced"),
 );
 /** A Checkout's life: `pending` while it awaits payment, then paid, or expired / released unpaid. */
 export const checkoutStatus = v.union(
@@ -177,6 +178,7 @@ export const orderEventKind = v.union(
   v.literal("refunded"),
   v.literal("invoiced"),
   v.literal("invoicePaid"),
+  v.literal("invoiceReissued"),
   v.literal("ready"),
 );
 /**
@@ -557,8 +559,12 @@ export default defineSchema({
      * units.
      */
     units: v.optional(v.number()),
-    /** Pesewas, set on `unitsCancelled`, `refundFlagged`, `refunded` and a Pre-order's `cancelled`. */
+    /**
+     * Pesewas, set on `unitsCancelled`, `refundFlagged`, `refunded`, a Pre-order's `cancelled`,
+     * and on `invoiced` / `invoiceReissued` (the new total).
+     */
     amount: v.optional(v.number()),
+    /** Free text; on `invoiceReissued`, the void reason. */
     note: v.optional(v.string()),
   }).index("by_order", ["orderId"]),
 

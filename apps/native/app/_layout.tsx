@@ -73,6 +73,14 @@ function StackLayout() {
             sheetGrabberVisible: true,
           }}
         />
+        <Stack.Screen
+          name="invoices/sheet"
+          options={{
+            presentation: "formSheet",
+            sheetAllowedDetents: [0.9],
+            sheetGrabberVisible: true,
+          }}
+        />
         <Stack.Screen name="categories" />
         <Stack.Screen name="delivery-zones" />
         <Stack.Screen name="store-settings" />

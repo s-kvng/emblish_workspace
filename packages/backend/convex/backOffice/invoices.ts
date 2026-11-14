@@ -4,10 +4,14 @@ import { mutation, query } from "../_generated/server";
 import { requireStaff } from "../lib/guards";
 import {
   confirmFee as confirmWindowFee,
+  invoiceDocumentFields,
+  invoiceInbox,
+  invoiceSheet,
   issueInvoices,
   previewInvoices,
+  voidAndReissue as voidAndReissueInvoice,
 } from "../model/invoices";
-import { invoiceStatus } from "../schema";
+import { invoiceKind, invoiceStatus } from "../schema";
 
 /**
  * Confirm the per-unit Shipping Fee for an arrived window. More than 20% over the estimate is
@@ -97,5 +101,125 @@ export const issue = mutation({
   handler: async (ctx, { windowId }) => {
     const actor = await requireStaff(ctx);
     return await issueInvoices(ctx, actor, windowId);
+  },
+});
+
+/** The Invoices inbox filters; Overdue includes those Eligible for Forfeit. */
+const inboxFilter = v.union(
+  v.literal("overdue"),
+  v.literal("eligible"),
+  v.literal("unpaid"),
+  v.literal("paid"),
+  v.literal("void"),
+);
+const filterTotal = v.object({
+  count: v.number(),
+  /** Pesewas. */
+  total: v.number(),
+});
+/** Where an invoice stands now: never stored, worked out from its first issue date. */
+const invoiceStateValidator = v.union(
+  v.literal("due"),
+  v.literal("overdue"),
+  v.literal("forfeitable"),
+  v.literal("paid"),
+  v.literal("void"),
+);
+
+/**
+ * The Invoices tab: every invoice across all windows. Each filter header has a count and GH₵
+ * total; overdue and Forfeit eligibility are worked out now, from each invoice's first issue.
+ */
+export const inbox = query({
+  args: { filter: inboxFilter },
+  returns: v.object({
+    counts: v.object({
+      overdue: filterTotal,
+      eligible: filterTotal,
+      unpaid: filterTotal,
+      paid: filterTotal,
+      void: filterTotal,
+    }),
+    rows: v.array(
+      v.object({
+        invoiceId: v.id("invoices"),
+        kind: invoiceKind,
+        number: v.string(),
+        orderReference: v.string(),
+        customerName: v.string(),
+        windowNumber: v.optional(v.number()),
+        productName: v.optional(v.string()),
+        /** Pesewas. */
+        total: v.number(),
+        state: invoiceStateValidator,
+        /** Days since first issue; day 0 is the day it was first issued. */
+        day: v.number(),
+        dueAt: v.number(),
+        paidAt: v.optional(v.number()),
+      }),
+    ),
+  }),
+  handler: async (ctx, { filter }) => {
+    await requireStaff(ctx);
+    return await invoiceInbox(ctx, filter, Date.now());
+  },
+});
+
+/**
+ * Void & reissue an unpaid invoice with a corrected per-unit fee or Delivery Fee. The
+ * replacement keeps the first issue date (due date, reminders, Forfeit clock), gets its own
+ * `/p/` code, and is texted to the Customer. A reason is required.
+ */
+export const voidAndReissue = mutation({
+  args: {
+    invoiceId: v.id("invoices"),
+    /** Why: "Wrong fee", "Wrong Delivery Zone", "Units recounted", or Staff's own words. */
+    reason: v.string(),
+    /** Pesewas per arrived unit; defaults to the old invoice's. */
+    unitFee: v.optional(v.number()),
+    /** Pesewas; defaults to the old invoice's Delivery Fee line, 0 drops it. */
+    deliveryFee: v.optional(v.number()),
+  },
+  returns: v.id("invoices"),
+  handler: async (ctx, args) => {
+    const actor = await requireStaff(ctx);
+    return await voidAndReissueInvoice(ctx, actor, args);
+  },
+});
+
+/**
+ * The invoice sheet: the live end of the invoice's chain (a reissued invoice follows to its
+ * replacement) as a paper invoice, with its day count, reminder dots, payment and the earlier
+ * voided versions.
+ */
+export const sheet = query({
+  args: { invoiceId: v.id("invoices") },
+  returns: v.object({
+    ...invoiceDocumentFields,
+    /** The live invoice shown, which may not be the one asked for. */
+    invoiceId: v.id("invoices"),
+    orderId: v.id("orders"),
+    phone: v.optional(v.string()),
+    windowNumber: v.optional(v.number()),
+    productName: v.optional(v.string()),
+    state: invoiceStateValidator,
+    /** Days since first issue. */
+    day: v.number(),
+    /** Days 7, 13, 15 and 28 (reminders), then 30 (Forfeit eligibility). */
+    reminders: v.array(v.object({ day: v.number(), reached: v.boolean() })),
+    /** What this invoice replaced, newest first. */
+    voidedVersions: v.array(
+      v.object({
+        invoiceId: v.id("invoices"),
+        number: v.string(),
+        total: v.number(),
+        voidReason: v.optional(v.string()),
+        voidedAt: v.optional(v.number()),
+      }),
+    ),
+  }),
+  handler: async (ctx, { invoiceId }) => {
+    await requireStaff(ctx);
+    return await invoiceSheet(ctx, invoiceId, Date.now());
   },
 });

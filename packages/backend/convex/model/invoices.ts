@@ -1,9 +1,10 @@
-import { ConvexError } from "convex/values";
+import { ConvexError, v } from "convex/values";
 
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { invoiceKind, invoiceLine, invoiceStatus } from "../schema";
 import { newInvoiceCode, nextReference } from "./codes";
-import { awaitsDeliveryQuote, fulfilmentAsShown } from "./fulfilment";
+import { awaitsDeliveryQuote, fulfilmentAsShown, shownFulfilment } from "./fulfilment";
 import { getWindow } from "./orderWindows";
 import { pickupLocation } from "./settings";
 import { dayMonth, ordersUrl, queueSms, renderSms } from "./sms";
@@ -317,6 +318,190 @@ export async function issueInvoices(
   return { issued, ready };
 }
 
+/** The invoice still in force at the end of a void → replacement chain: itself if not replaced. */
+export async function chainEnd(ctx: Pick<QueryCtx, "db">, invoice: Doc<"invoices">) {
+  let current = invoice;
+  while (current.supersededById) {
+    const next = await ctx.db.get(current.supersededById);
+    if (!next) break;
+    current = next;
+  }
+  return current;
+}
+
+/** The earlier versions an invoice replaced, newest first: each voided, with its reason. */
+export async function voidedVersions(ctx: Pick<QueryCtx, "db">, invoice: Doc<"invoices">) {
+  const versions: Doc<"invoices">[] = [];
+  let current = invoice;
+  while (current.supersedesId) {
+    const previous = await ctx.db.get(current.supersedesId);
+    if (!previous) break;
+    versions.push(previous);
+    current = previous;
+  }
+  return versions;
+}
+
+/**
+ * Void & reissue: replaces an unpaid invoice with a corrected one at `unitFee` (per arrived
+ * unit) and `deliveryFee`, each defaulting to what the old invoice charged. The replacement has
+ * its own number and `/p/` code but keeps the first issue date, so the due date, reminders and
+ * Forfeit clock carry on. The old one is voided with the reason, and the Customer is texted the
+ * new link.
+ */
+export async function voidAndReissue(
+  ctx: Pick<MutationCtx, "db" | "scheduler">,
+  actor: Doc<"staff">,
+  {
+    invoiceId,
+    reason,
+    unitFee,
+    deliveryFee,
+  }: {
+    invoiceId: Id<"invoices">;
+    reason: string;
+    unitFee?: number;
+    deliveryFee?: number;
+  },
+) {
+  const voidReason = reason.trim();
+  if (!voidReason) refuse("VOID_REASON_REQUIRED", "Say why the invoice is being voided.");
+  const invoice = await ctx.db.get(invoiceId);
+  if (!invoice) refuse("NOT_FOUND", "That invoice doesn't exist.");
+  if (invoice.status !== "unpaid") {
+    refuse(
+      "NOT_UNPAID",
+      invoice.status === "paid"
+        ? `${invoice.number} is already paid, so it can't be voided.`
+        : `${invoice.number} is already void. Open its replacement.`,
+    );
+  }
+  const order = await ctx.db.get(invoice.orderId);
+  if (!order) refuse("NOT_FOUND", "That invoice's order doesn't exist.");
+  // A Seev checkout still open on it could be paid after the void, leaving a Refund to make.
+  const sessions = await ctx.db
+    .query("paymentSessions")
+    .withIndex("by_invoice", (q) => q.eq("invoiceId", invoice._id))
+    .collect();
+  if (sessions.some((s) => s.settledAt === undefined && s.expiresAt > Date.now())) {
+    refuse(
+      "PAYMENT_IN_PROGRESS",
+      "The Customer is paying this invoice on Seev now. Try again once that checkout ends.",
+    );
+  }
+  if (deliveryFee !== undefined && deliveryFee > 0 && order.fulfilment.method !== "delivery") {
+    refuse("NOT_DELIVERY", `${order.reference} is for Pickup, so it has no Delivery Fee.`);
+  }
+  for (const amount of [unitFee, deliveryFee]) {
+    if (amount !== undefined && (!Number.isSafeInteger(amount) || amount < 0)) {
+      refuse("INVALID_FEE", "Enter fees in GH₵, to the pesewa.");
+    }
+  }
+
+  const lines: Doc<"invoices">["lines"] = [];
+  for (const line of invoice.lines) {
+    if (line.kind === "shippingFee") {
+      const fee = unitFee ?? line.unitFee;
+      lines.push({ ...line, unitFee: fee, amount: line.units * fee });
+    } else {
+      const amount = deliveryFee ?? line.amount;
+      if (amount > 0) lines.push({ ...line, amount });
+    }
+  }
+  const { fulfilment } = order;
+  if (
+    deliveryFee !== undefined &&
+    deliveryFee > 0 &&
+    !lines.some((line) => line.kind === "deliveryFee") &&
+    fulfilment.method === "delivery"
+  ) {
+    lines.push({
+      kind: "deliveryFee",
+      zoneName: fulfilment.zoneName,
+      amount: deliveryFee,
+    });
+  }
+  const total = lines.reduce((sum, line) => sum + line.amount, 0);
+  if (total === 0) {
+    refuse("ZERO_TOTAL", "The corrected invoice comes to GH₵0. Nothing would be left to pay.");
+  }
+
+  const code = await newInvoiceCode(ctx);
+  const replacementId = await ctx.db.insert("invoices", {
+    kind: invoice.kind,
+    orderId: order._id,
+    number: await nextReference(ctx, "INV"),
+    code,
+    lines,
+    total,
+    status: "unpaid",
+    clockStartedAt: invoice.clockStartedAt,
+    issuedBy: actor._id,
+    supersedesId: invoice._id,
+  });
+  await ctx.db.patch(invoice._id, {
+    status: "void",
+    voidReason,
+    supersededById: replacementId,
+  });
+  await ctx.db.insert("orderEvents", {
+    orderId: order._id,
+    kind: "invoiceReissued",
+    actor: { kind: "staff", staffId: actor._id },
+    amount: total,
+    note: voidReason,
+  });
+  const customer = await ctx.db.get(order.customerId);
+  if (customer) {
+    await queueSms(ctx, customer.phone, "invoiceReplaced", {
+      reference: order.reference,
+      total,
+      due: dayMonth(invoice.clockStartedAt + dueAfterMs),
+      payUrl: payUrl(code),
+    });
+  }
+  return replacementId;
+}
+
+/** An invoice as its paper document shows it, for `/p/` and the Back Office invoice sheet. */
+export const invoiceDocumentFields = {
+  kind: invoiceKind,
+  /** `INV-0001`. */
+  number: v.string(),
+  code: v.string(),
+  status: invoiceStatus,
+  issuedAt: v.number(),
+  /** The first issue date; a reissue keeps it. */
+  clockStartedAt: v.number(),
+  /** 14 days after `clockStartedAt`. */
+  dueAt: v.number(),
+  orderReference: v.string(),
+  customerName: v.optional(v.string()),
+  fulfilment: shownFulfilment,
+  pickupLocation: v.string(),
+  /** The order's lines: units that arrived, and any that didn't (refunded separately). */
+  items: v.array(
+    v.object({
+      productName: v.string(),
+      variantLabel: v.string(),
+      arrived: v.number(),
+      missing: v.number(),
+    }),
+  ),
+  lines: v.array(invoiceLine),
+  /** Pesewas: the AMOUNT DUE. */
+  total: v.number(),
+  /** The Item Payment's Receipt, for the footer. */
+  itemReceiptNumber: v.optional(v.string()),
+  /** Set once paid: the PAID stamp and its Receipt. */
+  paid: v.optional(
+    v.object({ paidAt: v.number(), receiptNumber: v.string(), receiptCode: v.string() }),
+  ),
+  /** Set on a voided invoice. */
+  voidReason: v.optional(v.string()),
+};
+
+
 /** An invoice by its `/p/` code, or null. */
 export async function findInvoiceByCode(ctx: Pick<QueryCtx, "db">, code: string) {
   return await ctx.db
@@ -335,7 +520,7 @@ export async function invoiceDocument(ctx: Pick<QueryCtx, "db">, invoice: Doc<"i
   const customer = await ctx.db.get(order.customerId);
   const itemPayment = await ctx.db.get(order.paymentId);
   const payment = invoice.paymentId ? await ctx.db.get(invoice.paymentId) : null;
-  const replacement = invoice.supersededById ? await ctx.db.get(invoice.supersededById) : null;
+  const replacement = invoice.supersededById ? await chainEnd(ctx, invoice) : null;
   const lines = await ctx.db
     .query("orderLines")
     .withIndex("by_order", (q) => q.eq("orderId", order._id))
@@ -416,4 +601,160 @@ export async function invoiceProgress(ctx: Pick<QueryCtx, "db">, window: Doc<"or
     else progress.outstanding += invoice.total;
   }
   return progress;
+}
+
+/** Unpaid this many days after first issue, a Shipping Fee Invoice can be Forfeited. */
+export const forfeitAfterDays = 30;
+/** The days after first issue that reminders go out on, while unpaid. */
+export const reminderDays = [7, 13, 15, 28] as const;
+
+/** Which day of its clock an invoice is on, in Ghana time (GMT): day 0 is the day of first issue. */
+export function invoiceDay(clockStartedAt: number, now: number) {
+  return Math.floor(now / DAY) - Math.floor(clockStartedAt / DAY);
+}
+
+/**
+ * Where an invoice stands, worked out now and never stored: `due` until its due date, then
+ * `overdue`, and `forfeitable` from day 30 for a Shipping Fee Invoice (a Delivery Fee Invoice
+ * never leads to a Forfeit).
+ */
+export function invoiceState(
+  invoice: Pick<Doc<"invoices">, "kind" | "status" | "clockStartedAt">,
+  now: number,
+) {
+  if (invoice.status !== "unpaid") return invoice.status;
+  const day = invoiceDay(invoice.clockStartedAt, now);
+  if (invoice.kind === "shippingFee" && day >= forfeitAfterDays) return "forfeitable" as const;
+  if (day > dueAfterMs / DAY) return "overdue" as const;
+  return "due" as const;
+}
+
+export type InboxFilter = "overdue" | "eligible" | "unpaid" | "paid" | "void";
+
+/** Whether an invoice in this state belongs under the filter. Overdue includes Forfeit-eligible. */
+function inFilter(filter: InboxFilter, state: ReturnType<typeof invoiceState>) {
+  switch (filter) {
+    case "overdue":
+      return state === "overdue" || state === "forfeitable";
+    case "eligible":
+      return state === "forfeitable";
+    case "unpaid":
+      return state === "due" || state === "overdue" || state === "forfeitable";
+    default:
+      return state === filter;
+  }
+}
+
+const inboxFilters: InboxFilter[] = ["overdue", "eligible", "unpaid", "paid", "void"];
+
+/**
+ * The Invoices inbox across every window: a count and GH₵ total under each filter, and the
+ * rows under `filter`. Unpaid ones oldest clock first, paid ones latest paid first, voided ones
+ * latest first.
+ */
+export async function invoiceInbox(ctx: Pick<QueryCtx, "db">, filter: InboxFilter, now: number) {
+  const counts = Object.fromEntries(
+    inboxFilters.map((key) => [key, { count: 0, total: 0 }]),
+  ) as Record<InboxFilter, { count: number; total: number }>;
+  const matching: {
+    invoice: Doc<"invoices">;
+    state: ReturnType<typeof invoiceState>;
+  }[] = [];
+  for (const status of ["unpaid", "paid", "void"] as const) {
+    const invoices = await ctx.db
+      .query("invoices")
+      .withIndex("by_status_and_clock", (q) => q.eq("status", status))
+      .collect();
+    for (const invoice of invoices) {
+      const state = invoiceState(invoice, now);
+      for (const key of inboxFilters) {
+        if (!inFilter(key, state)) continue;
+        counts[key].count++;
+        counts[key].total += invoice.total;
+      }
+      if (inFilter(filter, state)) matching.push({ invoice, state });
+    }
+  }
+  if (filter === "paid") {
+    matching.sort((a, b) => (b.invoice.paidAt ?? 0) - (a.invoice.paidAt ?? 0));
+  } else if (filter === "void") {
+    matching.sort((a, b) => b.invoice._creationTime - a.invoice._creationTime);
+  }
+
+  const rows = [];
+  for (const { invoice, state } of matching) {
+    const order = await ctx.db.get(invoice.orderId);
+    if (!order) continue;
+    const customer = await ctx.db.get(order.customerId);
+    const window = order.orderWindowId ? await ctx.db.get(order.orderWindowId) : null;
+    const product = window ? await ctx.db.get(window.productId) : null;
+    rows.push({
+      invoiceId: invoice._id,
+      kind: invoice.kind,
+      number: invoice.number,
+      orderReference: order.reference,
+      customerName: customer?.name ?? customer?.phone ?? "",
+      ...(window ? { windowNumber: window.number } : {}),
+      ...(product ? { productName: product.name } : {}),
+      total: invoice.total,
+      state,
+      day: invoiceDay(invoice.clockStartedAt, now),
+      dueAt: invoice.clockStartedAt + dueAfterMs,
+      ...(invoice.paidAt !== undefined ? { paidAt: invoice.paidAt } : {}),
+    });
+  }
+  return { counts, rows };
+}
+
+/**
+ * The Back Office invoice sheet, for the live end of `invoiceId`'s chain (so a reissued invoice
+ * follows to its replacement): the paper invoice, where it stands now and its day count, the
+ * reminder dots (days 7/13/15/28, then 30 for Forfeit), the payment, and the earlier voided
+ * versions with their reasons.
+ */
+export async function invoiceSheet(
+  ctx: Pick<QueryCtx, "db">,
+  invoiceId: Id<"invoices">,
+  now: number,
+) {
+  const first = await ctx.db.get(invoiceId);
+  if (!first) refuse("NOT_FOUND", "That invoice doesn't exist.");
+  const invoice = await chainEnd(ctx, first);
+  const document = await invoiceDocument(ctx, invoice);
+  const order = await ctx.db.get(invoice.orderId);
+  if (!document || !order) refuse("NOT_FOUND", "That invoice's order doesn't exist.");
+  const customer = await ctx.db.get(order.customerId);
+  const window = order.orderWindowId ? await ctx.db.get(order.orderWindowId) : null;
+  const product = window ? await ctx.db.get(window.productId) : null;
+  const day = invoiceDay(invoice.clockStartedAt, now);
+  // Once paid, the clock stopped: no more reminders, and no Forfeit.
+  const clockDay =
+    invoice.paidAt !== undefined ? invoiceDay(invoice.clockStartedAt, invoice.paidAt) : day;
+  const versions = [];
+  for (const version of await voidedVersions(ctx, invoice)) {
+    const replacement = version.supersededById ? await ctx.db.get(version.supersededById) : null;
+    versions.push({
+      invoiceId: version._id,
+      number: version.number,
+      total: version.total,
+      ...(version.voidReason ? { voidReason: version.voidReason } : {}),
+      ...(replacement ? { voidedAt: replacement._creationTime } : {}),
+    });
+  }
+  const { replacedByCode: _live, ...paper } = document;
+  return {
+    ...paper,
+    invoiceId: invoice._id,
+    orderId: order._id,
+    ...(customer ? { phone: customer.phone } : {}),
+    ...(window ? { windowNumber: window.number } : {}),
+    ...(product ? { productName: product.name } : {}),
+    state: invoiceState(invoice, now),
+    day,
+    reminders: [...reminderDays, forfeitAfterDays].map((d) => ({
+      day: d,
+      reached: clockDay >= d,
+    })),
+    voidedVersions: versions,
+  };
 }
