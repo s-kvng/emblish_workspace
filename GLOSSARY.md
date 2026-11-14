@@ -115,7 +115,7 @@ The confirmation a customer receives after a payment succeeds, one per payment, 
 _Avoid_: Invoice (for a payment already made), proof of payment
 
 **Forfeit**:
-Staff ending a Pre-order whose Shipping Fee Invoice has gone unpaid long past its due date; the goods are released to stock and the Item Payment is not automatically refunded.
+The Owner ending a Pre-order whose Shipping Fee Invoice is still unpaid 30 or more days after it was first issued; its unpaid invoices are voided, its units are released to Stock and the Item Payment is not refunded. A Delivery Fee Invoice never leads to one.
 _Avoid_: Abandon, expire, write off
 
 **Refund**:

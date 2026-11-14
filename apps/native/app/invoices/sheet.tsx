@@ -8,6 +8,7 @@ import { useState } from "react";
 import { Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { ForfeitAction } from "@/components/forfeit";
 import { shortDay, statePill, statePillClass, voidReasons } from "@/components/invoice-labels";
 import { refusalMessage } from "@/lib/form-errors";
 import { formatGhs, ghsText, parseGhs } from "@/lib/money";
@@ -20,8 +21,8 @@ export { ErrorBoundary } from "expo-router";
 /**
  * The invoice sheet, set out like a paper invoice: lines and total, issued / reissued / due
  * dates and the day count, reminder dots, the payment, and earlier voided versions struck
- * through. An unpaid invoice can be voided and reissued here. Opened on a reissued invoice, it
- * follows to the replacement.
+ * through. An unpaid invoice can be voided and reissued here, and from day 30 an Owner can
+ * Forfeit its Pre-order. Opened on a reissued invoice, it follows to the replacement.
  */
 export default function InvoiceSheet() {
   const { invoiceId } = useLocalSearchParams<{ invoiceId: string }>();
@@ -118,6 +119,9 @@ export default function InvoiceSheet() {
       ) : null}
 
       {sheet.status === "unpaid" ? <VoidAndReissue sheet={sheet} /> : null}
+      {sheet.canForfeit ? (
+        <ForfeitAction orderId={sheet.orderId} reference={sheet.orderReference} />
+      ) : null}
 
       <Button
         variant="secondary"

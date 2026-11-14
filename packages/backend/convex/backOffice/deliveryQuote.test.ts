@@ -19,6 +19,7 @@ import { refusal, withStaffMember } from "../test.staff";
 
 const sms = captureSms();
 const seev = fakeSeev();
+const DAY = 24 * 60 * 60 * 1000;
 
 /** Delivery to Kofi Elsewhere in Ghana, frozen as Checkout would: no fee until quoted. */
 function elsewhereDelivery(zoneId: Id<"deliveryZones">): Fulfilment {
@@ -379,6 +380,46 @@ describe("correcting a Shipping Fee Invoice beside a Delivery Fee Invoice", () =
         }),
       ),
     ).toBe("DELIVERY_FEE_INVOICED");
+  });
+});
+
+describe("Forfeit and a Delivery Fee Invoice", () => {
+  test("a Pre-order owing only a Delivery Fee Invoice can't be Forfeited, even past day 30", async () => {
+    const { t, ama, orderId, sheaWindow, sheaJar } = await elsewherePreorder({ arrive: false });
+    await ama.mutation(api.backOffice.orders.quoteDeliveryFee, { orderId, fee: 6000 });
+    await ama.mutation(api.backOffice.arrivals.lock, {
+      windowId: sheaWindow,
+      counts: [{ variantId: sheaJar, arrived: 2 }],
+    });
+    await ama.mutation(api.backOffice.invoices.confirmFee, { windowId: sheaWindow, fee: 0 });
+    await ama.mutation(api.backOffice.invoices.issue, { windowId: sheaWindow });
+    await t.run(async (ctx) => {
+      const invoice = (await ctx.db.query("invoices").first())!;
+      await ctx.db.patch(invoice._id, { clockStartedAt: Date.now() - 45 * DAY });
+    });
+
+    expect(await refusal(ama.mutation(api.backOffice.orders.forfeit, { orderId }))).toBe(
+      "NOT_FORFEITABLE",
+    );
+  });
+
+  test("Forfeiting voids the unpaid Delivery Fee Invoice too, so nothing is left to pay", async () => {
+    const { t, ama, orderId } = await elsewherePreorder({ arrive: true });
+    await ama.mutation(api.backOffice.orders.quoteDeliveryFee, { orderId, fee: 6000 });
+    await t.run(async (ctx) => {
+      const shipping = (await ctx.db.query("invoices").first())!;
+      await ctx.db.patch(shipping._id, { clockStartedAt: Date.now() - 30 * DAY });
+    });
+
+    await ama.mutation(api.backOffice.orders.forfeit, { orderId });
+
+    expect(await ama.query(api.backOffice.orders.get, { orderId })).toMatchObject({
+      status: "forfeited",
+      invoices: [
+        { kind: "shippingFee", status: "void" },
+        { kind: "deliveryFee", status: "void" },
+      ],
+    });
   });
 });
 

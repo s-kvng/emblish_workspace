@@ -60,6 +60,7 @@ const eventLabel: Record<Card["history"][number]["kind"], string> = {
   ready: "Ready for you",
   deliveryQuoted: "Delivery Fee quoted",
   fulfilmentSwitched: "Pickup / delivery changed",
+  forfeited: "Cancelled: Shipping Fee not paid",
 };
 
 /**

@@ -11,6 +11,7 @@ import { type PropsWithChildren, useState } from "react";
 import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { ForfeitAction } from "@/components/forfeit";
 import {
   customerLabel,
   deliveryFailureLabel,
@@ -42,6 +43,7 @@ const eventLabel = {
   ready: "Ready",
   deliveryQuoted: "Delivery Fee quoted",
   fulfilmentSwitched: "Fulfilment switched",
+  forfeited: "Forfeited",
 } as const;
 
 const invoiceStatusLabel = { unpaid: "Unpaid", paid: "Paid", void: "Void" } as const;
@@ -232,6 +234,7 @@ export default function OrderDetailScreen() {
           ) : null}
 
           <SwitchAction order={order} />
+          <ForfeitSection order={order} />
           <OrderActions order={order} />
 
           <Section title="History">
@@ -367,6 +370,16 @@ function SwitchAction({ order }: { order: Order }) {
           <Button.Label>Switch Pickup / Delivery</Button.Label>
         </Button>
       )}
+    </Section>
+  );
+}
+
+/** From day 30 of an unpaid Shipping Fee Invoice: Forfeit, for an Owner. */
+function ForfeitSection({ order }: { order: Order }) {
+  if (!order.canForfeit) return null;
+  return (
+    <Section title="Forfeit">
+      <ForfeitAction orderId={order.orderId} reference={order.reference} />
     </Section>
   );
 }

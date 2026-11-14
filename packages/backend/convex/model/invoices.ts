@@ -481,14 +481,18 @@ export async function refuseWhilePaying(ctx: Pick<QueryCtx, "db">, invoice: Doc<
   }
 }
 
-/** Voids an unpaid invoice outright, with nothing to replace it. */
+/** Voids an unpaid invoice outright, with nothing to replace it; its reminders stop. */
 export async function voidInvoice(
   ctx: Pick<MutationCtx, "db">,
   invoice: Doc<"invoices">,
   reason: string,
 ) {
   await refuseWhilePaying(ctx, invoice);
-  await ctx.db.patch(invoice._id, { status: "void", voidReason: reason });
+  await ctx.db.patch(invoice._id, {
+    status: "void",
+    voidReason: reason,
+    nextReminderOn: undefined,
+  });
 }
 
 /** The invoice still in force at the end of a void → replacement chain: itself if not replaced. */

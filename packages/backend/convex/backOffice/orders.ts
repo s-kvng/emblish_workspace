@@ -3,6 +3,7 @@ import { ConvexError, v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import { mutation, query } from "../_generated/server";
 import { requireOwner, requireStaff } from "../lib/guards";
+import { forfeitable, forfeit as forfeitOrder } from "../model/forfeit";
 import { fulfilmentAsShown, shownFulfilment } from "../model/fulfilment";
 import {
   switchable,
@@ -255,6 +256,21 @@ export const cancelPreorder = mutation({
 });
 
 /**
+ * The Owner Forfeits a Pre-order whose Shipping Fee Invoice is unpaid from day 30: the order
+ * ends Forfeited, every unpaid invoice on it is voided, its units are released to Stock and the
+ * Customer is texted. The Item Payment is kept; nothing is refunded.
+ */
+export const forfeit = mutation({
+  args: { orderId: v.id("orders") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const owner = await requireOwner(ctx);
+    await forfeitOrder(ctx, owner, args);
+    return null;
+  },
+});
+
+/**
  * The Owner refunds a handed-over order: units and/or its paid Delivery Fee, with a reason.
  * Goods that came back can be restocked as Returned. The Refund waits on Refunds to make.
  */
@@ -328,6 +344,8 @@ export const get = query({
     canQuoteDeliveryFee: v.boolean(),
     /** Not yet Dispatched or Collected: ⋯ → Switch fulfilment is offered. */
     canSwitch: v.boolean(),
+    /** Its Shipping Fee Invoice is unpaid from day 30: an Owner may Forfeit it. */
+    canForfeit: v.boolean(),
     history: v.array(
       v.object({
         kind: orderEventKind,
@@ -405,6 +423,7 @@ export const get = query({
       refundableDeliveryFee: await refundableDeliveryFee(ctx, order),
       canQuoteDeliveryFee: deliveryQuotable(order),
       canSwitch: switchable(order),
+      canForfeit: await forfeitable(ctx, order, Date.now()),
       history: await orderHistory(ctx, order._id),
       primaryAction: primaryAction(order),
     };

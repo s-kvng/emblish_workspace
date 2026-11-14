@@ -428,6 +428,15 @@ export const smsTemplates = {
     },
     redact: (body) => body.replace(/Pickup code: \d{6}/, "Pickup code: ******"),
   }),
+  // #19 row 14: the Owner Forfeits a Pre-order. "Questions?" is left out until the store's
+  // WhatsApp number is set.
+  forfeited: template<{ reference: string; whatsappUrl?: string }>({
+    render: ({ reference, whatsappUrl }) =>
+      `${reference} has been cancelled because its Shipping Fee was not paid. ` +
+      "Your item payment is not refunded." +
+      (whatsappUrl ? ` Questions? ${whatsappUrl}` : ""),
+    example: { reference: "P-1042", whatsappUrl: "wa.me/233241112222" },
+  }),
   // #19 row 8: Ready for Pickup without a payment, such as a GHS 0 Shipping Fee.
   readyForPickup: template<{
     reference: string;

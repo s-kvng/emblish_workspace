@@ -35,6 +35,7 @@ import type * as model_codes from "../model/codes.js";
 import type * as model_customers from "../model/customers.js";
 import type * as model_deliveryZones from "../model/deliveryZones.js";
 import type * as model_email from "../model/email.js";
+import type * as model_forfeit from "../model/forfeit.js";
 import type * as model_fulfilment from "../model/fulfilment.js";
 import type * as model_invitations from "../model/invitations.js";
 import type * as model_invoices from "../model/invoices.js";
@@ -105,6 +106,7 @@ declare const fullApi: ApiFromModules<{
   "model/customers": typeof model_customers;
   "model/deliveryZones": typeof model_deliveryZones;
   "model/email": typeof model_email;
+  "model/forfeit": typeof model_forfeit;
   "model/fulfilment": typeof model_fulfilment;
   "model/invitations": typeof model_invitations;
   "model/invoices": typeof model_invoices;

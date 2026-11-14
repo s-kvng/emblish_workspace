@@ -84,6 +84,7 @@ export const smsTemplate = v.union(
   v.literal("invoiceOverdue"),
   v.literal("invoiceFinalReminder"),
   v.literal("uncollectedReminder"),
+  v.literal("forfeited"),
 );
 /** A Checkout's life: `pending` while it awaits payment, then paid, or expired / released unpaid. */
 export const checkoutStatus = v.union(
@@ -193,6 +194,7 @@ export const orderEventKind = v.union(
   v.literal("ready"),
   v.literal("deliveryQuoted"),
   v.literal("fulfilmentSwitched"),
+  v.literal("forfeited"),
 );
 /**
  * Who did something to an order: a Staff member, the Customer (cancelling their own Pre-order),
@@ -575,8 +577,8 @@ export default defineSchema({
     /** Set on `deliveryFailed`. */
     failureReason: v.optional(deliveryFailureReason),
     /**
-     * Set on `unitsCancelled`, `refundFlagged`, a Pre-order's `cancelled` and `arrived`: how many
-     * units.
+     * Set on `unitsCancelled`, `refundFlagged`, a Pre-order's `cancelled` and `arrived`, and on
+     * `forfeited` (units released to Stock): how many units.
      */
     units: v.optional(v.number()),
     /**
