@@ -6,10 +6,11 @@ import { deliveryAsShown, shownDelivery } from "../model/fulfilment";
 import {
   switchable,
   switchEffect,
+  switchOptionsResult,
   switchFulfilment as switchOwnFulfilment,
   switchOptions as switchOwnOptions,
-  switchOptionsResult,
 } from "../model/fulfilmentSwitch";
+import { invoicesOnOrder } from "../model/invoices";
 import {
   customerNeedsToAct,
   handOverable,
@@ -17,7 +18,6 @@ import {
   orderLinesWithPhotos,
   refundsOnOrder,
 } from "../model/orders";
-import { invoicesOnOrder } from "../model/invoices";
 import { cancelPreorder as cancelOwnPreorder, selfCancellable } from "../model/refunds";
 import { pickupLocation } from "../model/settings";
 import {
@@ -181,7 +181,8 @@ export const mine = query({
       });
     }
     // Newest first (the index reads oldest first), then a stable sort by what needs the Customer.
-    const rank = (c: { needsAction: boolean; past: boolean }) => (c.needsAction ? 0 : c.past ? 2 : 1);
+    const rank = (c: { needsAction: boolean; past: boolean }) =>
+      c.needsAction ? 0 : c.past ? 2 : 1;
     return cards.reverse().sort((a, b) => rank(a) - rank(b));
   },
 });

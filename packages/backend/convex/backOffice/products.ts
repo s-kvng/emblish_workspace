@@ -2,17 +2,17 @@ import { v } from "convex/values";
 
 import { mutation, query } from "../_generated/server";
 import { requireStaff } from "../lib/guards";
-import { currentWindow } from "../model/windowLookups";
 import {
   archiveProduct,
   getProduct,
-  offeredForPreorder,
   inOptionOrder,
   listVariants,
+  offeredForPreorder,
   publishProduct,
   restoreProduct,
   saveProductDraft,
 } from "../model/products";
+import { currentWindow } from "../model/windowLookups";
 import { productOption, productStatus, windowStage } from "../schema";
 
 const variantFields = {

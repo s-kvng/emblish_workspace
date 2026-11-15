@@ -250,7 +250,9 @@ export default function OrderDetailScreen() {
                   </Text>
                   {event.amount !== undefined ? (
                     <Text className="font-sans text-foreground text-sm">
-                      {event.units ? `${event.units} ${event.units === 1 ? "unit" : "units"} · ` : ""}
+                      {event.units
+                        ? `${event.units} ${event.units === 1 ? "unit" : "units"} · `
+                        : ""}
                       {formatGhs(event.amount)}
                       {event.note && !event.overrideReason && !event.failureReason
                         ? ` (${event.note})`
@@ -476,8 +478,8 @@ function CancelPreorderForm({ order, onDone }: { order: Order; onDone: () => voi
         accessibilityLabel="Note"
       />
       <Text className="font-sans text-muted text-xs">
-        Every unit leaves the window, and the Item Payment of {formatGhs(amount)} goes on Refunds
-        to make for an Owner to pay out.
+        Every unit leaves the window, and the Item Payment of {formatGhs(amount)} goes on Refunds to
+        make for an Owner to pay out.
       </Text>
       {error ? <Text className="font-sans-semibold text-danger text-sm">{error}</Text> : null}
       <View className="flex-row gap-2">
@@ -608,12 +610,7 @@ function RefundForm({
         <Button variant="secondary" className="flex-1" onPress={onDone} isDisabled={busy}>
           <Button.Label>Back</Button.Label>
         </Button>
-        <Button
-          variant="danger"
-          className="flex-1"
-          onPress={submit}
-          isDisabled={busy || !ready}
-        >
+        <Button variant="danger" className="flex-1" onPress={submit} isDisabled={busy || !ready}>
           <Button.Label>{mode === "cancel" ? "Cancel units" : "Flag refund"}</Button.Label>
         </Button>
       </View>

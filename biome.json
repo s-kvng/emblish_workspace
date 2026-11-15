@@ -1,9 +1,9 @@
 {
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
   "vcs": {
-    "enabled": false,
+    "enabled": true,
     "clientKind": "git",
-    "useIgnoreFile": false
+    "useIgnoreFile": true
   },
   "files": {
     "ignoreUnknown": false,
@@ -26,12 +26,18 @@
       "!**/.svelte-kit",
       "!**/wrangler.jsonc",
       "!**/.source",
-      "!**/convex/_generated"
+      "!**/convex/_generated",
+      "!**/convex/**/_generated",
+      "!**/convex/betterAuth/schema.ts",
+      "!.claude",
+      "!.agents"
     ]
   },
   "formatter": {
     "enabled": true,
-    "indentStyle": "tab"
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
   },
   "assist": { "actions": { "source": { "organizeImports": "on" } } },
   "linter": {
@@ -73,5 +79,23 @@
     "parser": {
       "tailwindDirectives": true
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["packages/ui/src/components/**"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "useSemanticElements": "off",
+            "useKeyWithClickEvents": "off",
+            "noLabelWithoutControl": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["**/*.svg"],
+      "linter": { "rules": { "a11y": { "noSvgWithoutTitle": "off" } } }
+    }
+  ]
 }

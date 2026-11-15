@@ -7,11 +7,11 @@ import {
   changeWindowStage,
   closeWindow,
   describeChangeSheet,
+  describeStageSheet,
   discardDraft,
   extendWindow,
   getWindow,
   saveWindow,
-  describeStageSheet,
 } from "../model/orderWindows";
 import { getProduct, inOptionOrder, listVariants } from "../model/products";
 import { currentWindow, listWindowVariants } from "../model/windowLookups";

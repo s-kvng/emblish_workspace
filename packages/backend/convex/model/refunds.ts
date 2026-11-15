@@ -29,11 +29,7 @@ export function keptUnits(line: Doc<"orderLines">) {
  * Checks the units asked for against the order's lines and marks them refunded on each line,
  * returning the lines with their units and the pesewas they come to.
  */
-async function takeUnits(
-  ctx: Pick<MutationCtx, "db">,
-  order: Doc<"orders">,
-  asked: RefundLine[],
-) {
+async function takeUnits(ctx: Pick<MutationCtx, "db">, order: Doc<"orders">, asked: RefundLine[]) {
   if (new Set(asked.map((line) => line.orderLineId)).size !== asked.length) {
     refuse("DUPLICATE_LINE", "List each line once.");
   }

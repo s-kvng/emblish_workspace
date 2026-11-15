@@ -1,6 +1,7 @@
 import { api } from "@emblish_workspace/backend/convex/_generated/api";
 import type { Id } from "@emblish_workspace/backend/convex/_generated/dataModel";
 import type { OverrideReason } from "@emblish_workspace/backend/convex/model/orders";
+import { pickupCodeLength } from "@emblish_workspace/backend/convex/model/orders";
 import { brand } from "@emblish_workspace/brand/tokens";
 import { Ionicons } from "@expo/vector-icons";
 import { useMutation, useQuery } from "convex/react";
@@ -9,8 +10,6 @@ import { Input, Spinner } from "heroui-native";
 import { useEffect, useRef, useState } from "react";
 import { Animated, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
-import { pickupCodeLength } from "@emblish_workspace/backend/convex/model/orders";
 
 import {
   customerLabel,

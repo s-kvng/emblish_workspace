@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import { api } from "../_generated/api";
 import { accraDelivery, kofiPhone, withZones } from "../test.checkout";
-import { sheaArrived, sheaInvoiced, payCodeIn } from "../test.invoices";
+import { payCodeIn, sheaArrived, sheaInvoiced } from "../test.invoices";
 import { fakeSeev } from "../test.seev";
 import { captureSms } from "../test.sms";
 import { refusal } from "../test.staff";
@@ -195,12 +195,10 @@ describe("Hand over a Ready Pre-order", () => {
     const { t, ama } = await paidAtP();
     const pickupCode = await t.run(
       async (ctx) =>
-        (
-          await ctx.db
-            .query("orders")
-            .withIndex("by_reference", (q) => q.eq("reference", "P-0002"))
-            .unique()
-        )!.pickupCode,
+        (await ctx.db
+          .query("orders")
+          .withIndex("by_reference", (q) => q.eq("reference", "P-0002"))
+          .unique())!.pickupCode,
     );
 
     const card = await ama.query(api.backOffice.orders.findByCode, { code: pickupCode });
@@ -217,12 +215,10 @@ describe("Hand over a Ready Pre-order", () => {
     const { t, ama } = await sheaInvoiced(sms);
     const pickupCode = await t.run(
       async (ctx) =>
-        (
-          await ctx.db
-            .query("orders")
-            .withIndex("by_reference", (q) => q.eq("reference", "P-0001"))
-            .unique()
-        )!.pickupCode,
+        (await ctx.db
+          .query("orders")
+          .withIndex("by_reference", (q) => q.eq("reference", "P-0001"))
+          .unique())!.pickupCode,
     );
     const card = await ama.query(api.backOffice.orders.findByCode, { code: pickupCode });
 
@@ -254,12 +250,10 @@ describe("My orders and order detail", () => {
     const { t, ama, code } = await paidAtP();
     const orderId = await t.run(
       async (ctx) =>
-        (
-          await ctx.db
-            .query("orders")
-            .withIndex("by_reference", (q) => q.eq("reference", "P-0002"))
-            .unique()
-        )!._id,
+        (await ctx.db
+          .query("orders")
+          .withIndex("by_reference", (q) => q.eq("reference", "P-0002"))
+          .unique())!._id,
     );
 
     const order = await ama.query(api.backOffice.orders.get, { orderId });

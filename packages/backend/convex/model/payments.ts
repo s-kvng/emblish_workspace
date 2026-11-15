@@ -3,8 +3,8 @@ import type { MutationCtx } from "../_generated/server";
 import { convertHolds, deliveryFeesToday, preorderGroups, storeLines } from "./checkout";
 import { newPickupCode, newReceiptCode, nextReference } from "./codes";
 import { awaitsDeliveryQuote } from "./fulfilment";
-import { pickupLocation } from "./settings";
 import { nextUncollectedReminderOn } from "./reminderSchedule";
+import { pickupLocation } from "./settings";
 import { queueSms } from "./sms";
 import { recordMovement, stockCounts } from "./stock";
 import { windowRowFor } from "./windowLookups";
@@ -229,7 +229,11 @@ async function settleInvoicePayment(
       readyAt: now,
       nextReminderOn: nextUncollectedReminderOn({ ...order, status: "ready", readyAt: now }, now),
     });
-    await ctx.db.insert("orderEvents", { orderId: order._id, kind: "ready", actor: { kind: "system" } });
+    await ctx.db.insert("orderEvents", {
+      orderId: order._id,
+      kind: "ready",
+      actor: { kind: "system" },
+    });
   }
   await queueSms(ctx, customer.phone, "invoicePaid", {
     amount,

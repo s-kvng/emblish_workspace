@@ -158,8 +158,8 @@ describe("Staff cancel a Pre-order from order detail", () => {
       kind: "cancelled",
       by: "Customer",
     });
-    expect(
-      await refusal(esi.mutation(api.backOffice.orders.cancelPreorder, { orderId })),
-    ).toBe("NOT_CANCELLABLE");
+    expect(await refusal(esi.mutation(api.backOffice.orders.cancelPreorder, { orderId }))).toBe(
+      "NOT_CANCELLABLE",
+    );
   });
 });

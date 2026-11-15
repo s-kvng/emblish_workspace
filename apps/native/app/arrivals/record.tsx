@@ -129,7 +129,9 @@ function Wizard({ windowId, sheet }: { windowId: Id<"orderWindows">; sheet: Coun
       Alert.alert(
         "Invoices issued",
         `${count} invoice${count === 1 ? "" : "s"} texted.` +
-          (ready > 0 ? ` ${ready} Pre-order${ready === 1 ? " owes" : "s owe"} nothing and ${ready === 1 ? "is" : "are"} Ready.` : ""),
+          (ready > 0
+            ? ` ${ready} Pre-order${ready === 1 ? " owes" : "s owe"} nothing and ${ready === 1 ? "is" : "are"} Ready.`
+            : ""),
       );
     } catch (error) {
       Alert.alert("Couldn't issue the invoices", refusalMessage(error));
@@ -194,7 +196,11 @@ function Wizard({ windowId, sheet }: { windowId: Id<"orderWindows">; sheet: Coun
             />
           )
         ) : shownStep === 3 && locked ? (
-          preview === undefined ? <Spinner /> : <IssueStep preview={preview} />
+          preview === undefined ? (
+            <Spinner />
+          ) : (
+            <IssueStep preview={preview} />
+          )
         ) : notYetOrdered ? (
           <Text className="font-sans text-muted text-sm">
             W{sheet.number} is {stageLabel[sheet.stage].toLowerCase()}, so its arrival can't be
@@ -390,7 +396,9 @@ function FeeStep({
             <Text className="font-sans-semibold text-foreground text-sm">
               More than 20% over the estimate. Customers can't cancel over it.
             </Text>
-            <Text className="font-sans text-foreground text-sm">I've checked the supplier's bill</Text>
+            <Text className="font-sans text-foreground text-sm">
+              I've checked the supplier's bill
+            </Text>
           </View>
         </Pressable>
       ) : null}
@@ -454,13 +462,16 @@ function IssueStep({ preview }: { preview: Preview }) {
             <Text className="font-sans text-muted text-xs">Delivery Fee quoted later</Text>
           ) : null}
           {row.total === 0 && !preview.issued ? (
-            <Text className="font-sans text-muted text-xs">Owes nothing: no invoice, Ready at once</Text>
+            <Text className="font-sans text-muted text-xs">
+              Owes nothing: no invoice, Ready at once
+            </Text>
           ) : null}
           {row.status ? (
             <Text
               className={`font-sans-semibold text-xs ${row.status === "paid" ? "text-success" : "text-brand-gold-ink"}`}
             >
-              {row.number} · {row.status === "paid" ? "Paid" : row.status === "void" ? "Void" : "Unpaid"}
+              {row.number} ·{" "}
+              {row.status === "paid" ? "Paid" : row.status === "void" ? "Void" : "Unpaid"}
             </Text>
           ) : null}
         </View>

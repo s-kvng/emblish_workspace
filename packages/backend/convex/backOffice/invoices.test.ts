@@ -177,7 +177,13 @@ describe("Issue Shipping Fee Invoices", () => {
       ),
       invoices: [
         { reference: "P-0001", customerName: "Kofi Boateng", units: 1, shipping: 900, total: 900 },
-        { reference: "P-0002", customerName: "Kofi Boateng", units: 2, shipping: 1800, total: 1800 },
+        {
+          reference: "P-0002",
+          customerName: "Kofi Boateng",
+          units: 2,
+          shipping: 1800,
+          total: 1800,
+        },
       ],
       skipped: [{ reference: "P-0003", customerName: "Esi Owusu" }],
     });

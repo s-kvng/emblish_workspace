@@ -15,7 +15,13 @@ import { useStaffMember } from "@/lib/staff-member";
  * is unpaid from day 30. Only an Owner can do it (Staff see it locked); it asks to confirm first,
  * since the Customer is texted and the Item Payment is kept.
  */
-export function ForfeitAction({ orderId, reference }: { orderId: Id<"orders">; reference: string }) {
+export function ForfeitAction({
+  orderId,
+  reference,
+}: {
+  orderId: Id<"orders">;
+  reference: string;
+}) {
   const isOwner = useStaffMember()?.role === "owner";
   const forfeit = useMutation(api.backOffice.orders.forfeit);
   const [confirming, setConfirming] = useState(false);

@@ -8,9 +8,9 @@ import { fulfilmentAsShown, shownFulfilment } from "../model/fulfilment";
 import {
   switchable,
   switchEffect,
+  switchOptionsResult,
   switchFulfilment as switchOrderFulfilment,
   switchOptions as switchOrderOptions,
-  switchOptionsResult,
 } from "../model/fulfilmentSwitch";
 import {
   deliveryQuotable,

@@ -521,7 +521,10 @@ function CardDetail({ card }: { card: Card }) {
       <Section title="Items">
         <ul className="grid gap-1 text-sm">
           {card.lines.map((line) => (
-            <li key={`${line.productName}-${line.variantLabel}`} className="flex justify-between gap-3">
+            <li
+              key={`${line.productName}-${line.variantLabel}`}
+              className="flex justify-between gap-3"
+            >
               <span>
                 {line.quantity}× {line.productName}
                 {line.variantLabel && (

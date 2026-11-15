@@ -70,10 +70,7 @@ async function pickupCodeTaken(ctx: Pick<QueryCtx, "db">, code: string) {
 }
 
 /** The next reference in a sequence, e.g. `S-0001`, bumping its counter in this mutation. */
-export async function nextReference(
-  ctx: Pick<MutationCtx, "db">,
-  name: "S" | "P" | "R" | "INV",
-) {
+export async function nextReference(ctx: Pick<MutationCtx, "db">, name: "S" | "P" | "R" | "INV") {
   const counter = await ctx.db
     .query("counters")
     .withIndex("by_name", (q) => q.eq("name", name))
