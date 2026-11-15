@@ -96,6 +96,7 @@ function StackLayout() {
         <Stack.Screen name="stock/variant" />
         <Stack.Screen name="orders/detail" />
         <Stack.Screen name="refunds" />
+        <Stack.Screen name="reports" />
         {/* The Counter slides up over any tab as a full-screen desk. */}
         <Stack.Screen
           name="counter"

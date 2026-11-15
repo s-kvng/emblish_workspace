@@ -43,7 +43,8 @@
           "photosPermission": "Emblish uses your photos for Product galleries.",
           "cameraPermission": "Emblish uses the camera to photograph Products."
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true,

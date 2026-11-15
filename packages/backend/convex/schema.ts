@@ -457,7 +457,10 @@ export default defineSchema({
     orderId: v.optional(v.id("orders")),
     /** The Order Window an `arrival` or `lateArrival` came in with. */
     orderWindowId: v.optional(v.id("orderWindows")),
-  }).index("by_variant", ["variantId"]),
+  })
+    .index("by_variant", ["variantId"])
+    // Reports read one kind (Sold offline) over a period of `_creationTime`.
+    .index("by_kind", ["kind"]),
 
   // A submitted Bag awaiting one payment. Created at Pay with its Stock Holds; unpaid, it
   // expires as a whole at `expiresAt` (a `scheduler.runAt` job) or is released when the Bag changes.
@@ -524,7 +527,8 @@ export default defineSchema({
     .index("by_receiptCode", ["receiptCode"])
     .index("by_customer", ["customerId"])
     .index("by_checkout", ["checkoutId"])
-    .index("by_invoice", ["invoiceId"]),
+    .index("by_invoice", ["invoiceId"])
+    .index("by_paidAt", ["paidAt"]),
 
   // Pre-orders and Store Orders (ADR 0002).
   orders: defineTable({
@@ -560,7 +564,8 @@ export default defineSchema({
     .index("by_payment", ["paymentId"])
     .index("by_status", ["status"])
     .index("by_pickupCode_and_status", ["pickupCode", "status"])
-    .index("by_nextReminderOn", ["nextReminderOn"]),
+    .index("by_nextReminderOn", ["nextReminderOn"])
+    .index("by_placedAt", ["placedAt"]),
 
   // An order's lines, with names and prices frozen at payment.
   orderLines: defineTable({
@@ -628,7 +633,8 @@ export default defineSchema({
     refundNote: v.optional(v.string()),
   })
     .index("by_status", ["status"])
-    .index("by_payment", ["paymentId"]),
+    .index("by_payment", ["paymentId"])
+    .index("by_refundedAt", ["refundedAt"]),
 
   // A request to pay money not yet paid on an order, public at `/p/<code>`. Paying it in full
   // writes a `payments` row (its Receipt); it never changes once paid.
