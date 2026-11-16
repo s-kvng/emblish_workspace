@@ -299,6 +299,16 @@ export default defineSchema({
     .index("by_authUser", ["authUserId"])
     .index("by_phone", ["phone"]),
 
+  // The audit of Staff moving a Customer to a new phone number, one row per move.
+  phoneReassignments: defineTable({
+    customerId: v.id("customers"),
+    /** E.164: the number that no longer signs in to this Customer. */
+    oldPhone: v.string(),
+    /** E.164: the number that does now. */
+    newPhone: v.string(),
+    staffId: v.id("staff"),
+  }).index("by_customer", ["customerId"]),
+
   // The SMS outbox and the log Staff see. Mutations insert a row and schedule
   // `system/sms.send`; only that action calls Arkesel, and its callback moves the status on.
   smsMessages: defineTable({

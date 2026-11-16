@@ -37,6 +37,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
 									image?: null | string;
 									kind: string;
 									name: string;
+									phoneNumber?: null | string;
+									phoneNumberVerified?: null | boolean;
 									updatedAt: number;
 									userId?: null | string;
 								};
@@ -114,6 +116,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
 										| "updatedAt"
 										| "userId"
 										| "kind"
+										| "phoneNumber"
+										| "phoneNumberVerified"
 										| "_id";
 									mode?: "sensitive" | "insensitive";
 									operator?:
@@ -308,6 +312,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
 										| "updatedAt"
 										| "userId"
 										| "kind"
+										| "phoneNumber"
+										| "phoneNumberVerified"
 										| "_id";
 									mode?: "sensitive" | "insensitive";
 									operator?:
@@ -571,6 +577,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
 									image?: null | string;
 									kind?: string;
 									name?: string;
+									phoneNumber?: null | string;
+									phoneNumberVerified?: null | boolean;
 									updatedAt?: number;
 									userId?: null | string;
 								};
@@ -585,6 +593,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
 										| "updatedAt"
 										| "userId"
 										| "kind"
+										| "phoneNumber"
+										| "phoneNumberVerified"
 										| "_id";
 									mode?: "sensitive" | "insensitive";
 									operator?:
@@ -811,6 +821,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
 									image?: null | string;
 									kind?: string;
 									name?: string;
+									phoneNumber?: null | string;
+									phoneNumberVerified?: null | boolean;
 									updatedAt?: number;
 									userId?: null | string;
 								};
@@ -825,6 +837,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
 										| "updatedAt"
 										| "userId"
 										| "kind"
+										| "phoneNumber"
+										| "phoneNumberVerified"
 										| "_id";
 									mode?: "sensitive" | "insensitive";
 									operator?:

@@ -196,12 +196,13 @@ describe("Today", () => {
 
 describe("searching by phone or Pickup Code", () => {
   test("a phone number, however it's typed, finds the Customer and their orders", async () => {
-    const { esi, order } = await counter();
+    const { esi, order, customerId } = await counter();
 
     const results = await esi.query(api.backOffice.orders.search, { query: "024 123 4567" });
 
     expect(results).toEqual([
       {
+        customerId,
         name: "Kofi Boateng",
         phone: kofiPhone,
         orders: [expect.objectContaining({ orderId: order.orderId, status: "ready" })],

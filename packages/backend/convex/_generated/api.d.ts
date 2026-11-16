@@ -13,6 +13,7 @@ import type * as crons from "../crons.js";
 import type * as backOffice_alerts from "../backOffice/alerts.js";
 import type * as backOffice_arrivals from "../backOffice/arrivals.js";
 import type * as backOffice_categories from "../backOffice/categories.js";
+import type * as backOffice_customers from "../backOffice/customers.js";
 import type * as backOffice_deliveryZones from "../backOffice/deliveryZones.js";
 import type * as backOffice_invitation from "../backOffice/invitation.js";
 import type * as backOffice_invoices from "../backOffice/invoices.js";
@@ -91,6 +92,7 @@ declare const fullApi: ApiFromModules<{
   "backOffice/alerts": typeof backOffice_alerts;
   "backOffice/arrivals": typeof backOffice_arrivals;
   "backOffice/categories": typeof backOffice_categories;
+  "backOffice/customers": typeof backOffice_customers;
   "backOffice/deliveryZones": typeof backOffice_deliveryZones;
   "backOffice/invitation": typeof backOffice_invitation;
   "backOffice/invoices": typeof backOffice_invoices;

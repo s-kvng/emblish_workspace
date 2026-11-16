@@ -530,6 +530,7 @@ export const search = query({
   args: { query: v.string() },
   returns: v.array(
     v.object({
+      customerId: v.id("customers"),
       name: v.optional(v.string()),
       phone: v.string(),
       orders: v.array(
@@ -553,6 +554,7 @@ export const search = query({
       .collect();
     return [
       {
+        customerId: customer._id,
         name: customer.name,
         phone: customer.phone,
         orders: orders.map((order) => ({

@@ -10,7 +10,7 @@ import { components, internal } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
 import authConfig from "./auth.config";
 import authSchema from "./betterAuth/schema";
-import { ghanaPhonePattern } from "./model/customers";
+import { ghanaPhonePattern, phoneSignInEmail } from "./model/customers";
 
 const siteUrl = process.env.SITE_URL!;
 const daySeconds = 24 * 60 * 60;
@@ -103,8 +103,7 @@ export function createAuthOptions(ctx: GenericCtx<DataModel>) {
           }
         },
         signUpOnVerification: {
-          // Better Auth needs an email; this one is never shown and can't receive mail.
-          getTempEmail: (phone) => `${phone.replace(/\D/g, "")}@phone.emblish.invalid`,
+          getTempEmail: phoneSignInEmail,
         },
         callbackOnVerification: async ({ phoneNumber: phone, user }) => {
           if ((user as { kind?: string }).kind !== "customer") {

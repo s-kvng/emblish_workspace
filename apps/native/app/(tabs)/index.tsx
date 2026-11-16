@@ -10,6 +10,7 @@ import { Image, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { customerLabel, orderStatusLabel } from "@/components/order-labels";
+import { ReassignPhone } from "@/components/reassign-phone";
 import { formatGhs } from "@/lib/money";
 import { useStaffMember } from "@/lib/staff-member";
 
@@ -77,7 +78,10 @@ export default function Today() {
               </Text>
             ) : (
               results.map((customer) => (
-                <View key={customer.phone} className="rounded-2xl border border-border bg-surface">
+                <View
+                  key={customer.customerId}
+                  className="rounded-2xl border border-border bg-surface"
+                >
                   <View className="px-4 pt-3 pb-2">
                     <Text className="font-sans-semibold text-base text-foreground">
                       {customerLabel(customer)}
@@ -98,6 +102,13 @@ export default function Today() {
                       />
                     ))
                   )}
+                  <View className="border-border border-t">
+                    <ReassignPhone
+                      customerId={customer.customerId}
+                      phone={customer.phone}
+                      onMoved={setQuery}
+                    />
+                  </View>
                 </View>
               ))
             ))}
