@@ -1,0 +1,41 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "handover-prototype",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "cd .claude/worktrees/back-office-handover && EXPO_PUBLIC_CONVEX_URL=https://prototype-offline-123.convex.cloud EXPO_PUBLIC_CONVEX_SITE_URL=https://prototype-offline-123.convex.site bun run --cwd apps/native web --port 8082 --clear"
+      ],
+      "port": 8082
+    },
+    {
+      "name": "visual-direction-prototype",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "cd .claude/worktrees/visual-direction && NEXT_PUBLIC_CONVEX_URL=https://prototype-no-backend.convex.cloud NEXT_PUBLIC_CONVEX_SITE_URL=https://prototype-no-backend.convex.site bun run --cwd apps/web next dev --port 3012"
+      ],
+      "port": 3012
+    },
+    {
+      "name": "storefront",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "NEXT_PUBLIC_CONVEX_URL=https://shell-no-backend.convex.cloud NEXT_PUBLIC_CONVEX_SITE_URL=https://shell-no-backend.convex.site bun run --cwd apps/web dev"
+      ],
+      "port": 3001
+    },
+    {
+      "name": "back-office-web",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "EXPO_PUBLIC_CONVEX_URL=https://shell-no-backend.convex.cloud EXPO_PUBLIC_CONVEX_SITE_URL=https://shell-no-backend.convex.site bun run --cwd apps/native web --port 8083 --clear"
+      ],
+      "port": 8083
+    }
+  ]
+}

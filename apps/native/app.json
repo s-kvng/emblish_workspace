@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "emblish_workspace",
+    "name": "emblish",
     "slug": "emblish_workspace",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -44,7 +44,11 @@
           "cameraPermission": "Emblish uses the camera to photograph Products."
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      "expo-font",
+      "expo-secure-store",
+      "expo-status-bar",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
