@@ -3,7 +3,15 @@ import { ConvexError, v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import { mutation, query } from "../_generated/server";
 import { requireOwner, requireStaff } from "../lib/guards";
+import { forfeitable, forfeit as forfeitOrder } from "../model/forfeit";
 import { fulfilmentAsShown, shownFulfilment } from "../model/fulfilment";
+import {
+  switchable,
+  switchEffect,
+  switchOptionsResult,
+  switchFulfilment as switchOrderFulfilment,
+  switchOptions as switchOrderOptions,
+} from "../model/fulfilmentSwitch";
 import {
   deliveryQuotable,
   invoicesOnOrder,
@@ -39,6 +47,7 @@ import { pickupLocation } from "../model/settings";
 import {
   cancelReason,
   deliveryFailureReason,
+  fulfilmentRequest,
   invoiceKind,
   invoiceStatus,
   orderEventKind,
@@ -156,6 +165,39 @@ export const quoteDeliveryFee = mutation({
   },
 });
 
+/**
+ * ⋯ → Switch fulfilment: Pickup and every Delivery Zone, each with its fee difference and the
+ * money effect switching to it would have. Nothing to pick once the order is Dispatched.
+ */
+export const switchOptions = query({
+  args: { orderId: v.id("orders") },
+  returns: switchOptionsResult,
+  handler: async (ctx, { orderId }) => {
+    await requireStaff(ctx);
+    const order = await ctx.db.get(orderId);
+    if (!order) throw new ConvexError({ code: "NOT_FOUND", message: "That order doesn't exist." });
+    return await switchOrderOptions(ctx, order);
+  },
+});
+
+/**
+ * Switches the order to Pickup, or Delivery to a zone and address, until it's Dispatched or
+ * Collected. Returns the money effect applied, as `switchOptions` showed it.
+ */
+export const switchFulfilment = mutation({
+  args: {
+    orderId: v.id("orders"),
+    to: fulfilmentRequest,
+    /** The money effect the sheet showed; the switch is refused if it no longer holds. */
+    expected: v.optional(v.array(switchEffect)),
+  },
+  returns: v.array(switchEffect),
+  handler: async (ctx, { orderId, to, expected }) => {
+    const staff = await requireStaff(ctx);
+    return await switchOrderFulfilment(ctx, { kind: "staff", staff }, { orderId, to, expected });
+  },
+});
+
 /** The rider handed it over: a Dispatched order becomes Delivered. */
 export const markDelivered = mutation({
   args: { orderId: v.id("orders") },
@@ -209,6 +251,21 @@ export const cancelPreorder = mutation({
   handler: async (ctx, args) => {
     const staff = await requireStaff(ctx);
     await cancelOrderPreorder(ctx, { kind: "staff", staff }, args);
+    return null;
+  },
+});
+
+/**
+ * The Owner Forfeits a Pre-order whose Shipping Fee Invoice is unpaid from day 30: the order
+ * ends Forfeited, every unpaid invoice on it is voided, its units are released to Stock and the
+ * Customer is texted. The Item Payment is kept; nothing is refunded.
+ */
+export const forfeit = mutation({
+  args: { orderId: v.id("orders") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const owner = await requireOwner(ctx);
+    await forfeitOrder(ctx, owner, args);
     return null;
   },
 });
@@ -285,6 +342,10 @@ export const get = query({
     refundableDeliveryFee: v.number(),
     /** Elsewhere in Ghana with no fee yet: Staff can quote it. */
     canQuoteDeliveryFee: v.boolean(),
+    /** Not yet Dispatched or Collected: ⋯ → Switch fulfilment is offered. */
+    canSwitch: v.boolean(),
+    /** Its Shipping Fee Invoice is unpaid from day 30: an Owner may Forfeit it. */
+    canForfeit: v.boolean(),
     history: v.array(
       v.object({
         kind: orderEventKind,
@@ -361,6 +422,8 @@ export const get = query({
       canRefundAfterHandover: handedOver(order),
       refundableDeliveryFee: await refundableDeliveryFee(ctx, order),
       canQuoteDeliveryFee: deliveryQuotable(order),
+      canSwitch: switchable(order),
+      canForfeit: await forfeitable(ctx, order, Date.now()),
       history: await orderHistory(ctx, order._id),
       primaryAction: primaryAction(order),
     };
@@ -467,6 +530,7 @@ export const search = query({
   args: { query: v.string() },
   returns: v.array(
     v.object({
+      customerId: v.id("customers"),
       name: v.optional(v.string()),
       phone: v.string(),
       orders: v.array(
@@ -490,6 +554,7 @@ export const search = query({
       .collect();
     return [
       {
+        customerId: customer._id,
         name: customer.name,
         phone: customer.phone,
         orders: orders.map((order) => ({

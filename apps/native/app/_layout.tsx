@@ -54,6 +54,14 @@ function StackLayout() {
         <Stack.Screen name="windows/product" />
         <Stack.Screen name="windows/new" options={{ gestureEnabled: false }} />
         <Stack.Screen
+          name="windows/announce"
+          options={{
+            presentation: "formSheet",
+            sheetAllowedDetents: [0.9],
+            sheetGrabberVisible: true,
+          }}
+        />
+        <Stack.Screen
           name="windows/stage"
           options={{
             presentation: "formSheet",
@@ -88,6 +96,7 @@ function StackLayout() {
         <Stack.Screen name="stock/variant" />
         <Stack.Screen name="orders/detail" />
         <Stack.Screen name="refunds" />
+        <Stack.Screen name="reports" />
         {/* The Counter slides up over any tab as a full-screen desk. */}
         <Stack.Screen
           name="counter"

@@ -50,12 +50,20 @@ export default function More() {
         detail="Pickup point and hours, WhatsApp and call numbers"
       />
       {staffMember?.role === "owner" ? (
-        <MoreLink
-          href="/staff"
-          icon="people"
-          title="Staff"
-          detail="Invite people, change roles, deactivate"
-        />
+        <>
+          <MoreLink
+            href="/reports"
+            icon="bar-chart"
+            title="Reports"
+            detail="Money in, Refunds, Net and Best sellers; Export CSV"
+          />
+          <MoreLink
+            href="/staff"
+            icon="people"
+            title="Staff"
+            detail="Invite people, change roles, deactivate"
+          />
+        </>
       ) : null}
       <View className="rounded-2xl border border-border bg-surface p-4">
         <Text className="font-sans-semibold text-muted text-xs uppercase tracking-[2px]">
@@ -85,7 +93,14 @@ function MoreLink({
   title,
   detail,
 }: {
-  href: "/delivery-zones" | "/products" | "/staff" | "/stock" | "/store-settings" | "/windows";
+  href:
+    | "/delivery-zones"
+    | "/products"
+    | "/reports"
+    | "/staff"
+    | "/stock"
+    | "/store-settings"
+    | "/windows";
   icon: ComponentProps<typeof Ionicons>["name"];
   title: string;
   detail: string;

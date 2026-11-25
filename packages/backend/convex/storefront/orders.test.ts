@@ -108,7 +108,9 @@ describe("an expanded card's History", () => {
     const order = await paidOrder(t, customerId, [{ variantId: small, quantity: 1 }]);
     const esi = await withStaffMember(t, "Esi Ofori");
     await esi.mutation(api.backOffice.orders.handOver, {
-      orders: [{ orderId: order.orderId, override: { reason: "other", note: "Brother collected" } }],
+      orders: [
+        { orderId: order.orderId, override: { reason: "other", note: "Brother collected" } },
+      ],
     });
 
     const [card] = await customer.query(api.storefront.orders.mine, {});

@@ -115,7 +115,7 @@ The confirmation a customer receives after a payment succeeds, one per payment, 
 _Avoid_: Invoice (for a payment already made), proof of payment
 
 **Forfeit**:
-Staff ending a Pre-order whose Shipping Fee Invoice has gone unpaid long past its due date; the goods are released to stock and the Item Payment is not automatically refunded.
+The Owner ending a Pre-order whose Shipping Fee Invoice is still unpaid 30 or more days after it was first issued; its unpaid invoices are voided, its units are released to Stock and the Item Payment is not refunded. A Delivery Fee Invoice never leads to one.
 _Avoid_: Abandon, expire, write off
 
 **Refund**:
@@ -153,6 +153,10 @@ _Avoid_: Collection code, OTP, PIN
 **Delivery Zone**:
 An area the company delivers to, with a flat Delivery Fee set by the Owner; "Elsewhere in Ghana" is a zone whose fee Staff quote per order.
 _Avoid_: Region, area, delivery band
+
+**Fulfilment Switch**:
+A change to an order's Fulfilment Method, Delivery Zone or address after Checkout, by the signed-in Customer or Staff, until it is Dispatched or Collected. Unpaid Delivery Fees are adjusted on their invoices; a dearer fee already paid is topped up on a Delivery Fee Invoice; a cheaper one becomes a Refund.
+_Avoid_: Fulfilment change, delivery swap
 
 ## Notifications
 

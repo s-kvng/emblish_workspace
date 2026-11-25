@@ -79,6 +79,13 @@ export const smsTemplate = v.union(
   v.literal("invoicePaid"),
   v.literal("invoiceReplaced"),
   v.literal("deliveryFeeInvoice"),
+  v.literal("invoiceReminder"),
+  v.literal("invoiceDueTomorrow"),
+  v.literal("invoiceOverdue"),
+  v.literal("invoiceFinalReminder"),
+  v.literal("uncollectedReminder"),
+  v.literal("forfeited"),
+  v.literal("windowAlert"),
 );
 /** A Checkout's life: `pending` while it awaits payment, then paid, or expired / released unpaid. */
 export const checkoutStatus = v.union(
@@ -187,6 +194,8 @@ export const orderEventKind = v.union(
   v.literal("invoiceReissued"),
   v.literal("ready"),
   v.literal("deliveryQuoted"),
+  v.literal("fulfilmentSwitched"),
+  v.literal("forfeited"),
 );
 /**
  * Who did something to an order: a Staff member, the Customer (cancelling their own Pre-order),
@@ -241,6 +250,12 @@ export const invoiceLine = v.union(
   }),
   v.object({ kind: v.literal("deliveryFee"), zoneName: v.string(), amount: v.number() }),
 );
+/** An Alert Subscriber: `pending` until the texted code confirms the number. */
+export const alertSubscriberStatus = v.union(
+  v.literal("pending"),
+  v.literal("confirmed"),
+  v.literal("unsubscribed"),
+);
 const invitationStatus = v.union(
   v.literal("pending"),
   v.literal("accepted"),
@@ -284,6 +299,16 @@ export default defineSchema({
     .index("by_authUser", ["authUserId"])
     .index("by_phone", ["phone"]),
 
+  // The audit of Staff moving a Customer to a new phone number, one row per move.
+  phoneReassignments: defineTable({
+    customerId: v.id("customers"),
+    /** E.164: the number that no longer signs in to this Customer. */
+    oldPhone: v.string(),
+    /** E.164: the number that does now. */
+    newPhone: v.string(),
+    staffId: v.id("staff"),
+  }).index("by_customer", ["customerId"]),
+
   // The SMS outbox and the log Staff see. Mutations insert a row and schedule
   // `system/sms.send`; only that action calls Arkesel, and its callback moves the status on.
   smsMessages: defineTable({
@@ -299,7 +324,9 @@ export default defineSchema({
     error: v.optional(v.string()),
     /** The message this one resends. */
     resendOf: v.optional(v.id("smsMessages")),
-    // Refs to the order, invoice, window or subscriber are added with those tables.
+    /** The Window Alert it's part of. */
+    windowAlertId: v.optional(v.id("windowAlerts")),
+    // Refs to the order or invoice are added with those tables.
   })
     .index("by_to_and_template", ["to", "template"])
     .index("by_arkeselId", ["arkeselId"])
@@ -370,6 +397,8 @@ export default defineSchema({
     shippingFeeConfirmed: v.optional(v.number()),
     /** Staff checked the supplier's bill for a fee more than 20% over the estimate. */
     overEstimateAcknowledged: v.optional(v.boolean()),
+    /** When a Window Alert first announced it. */
+    announcedAt: v.optional(v.number()),
     /** When its Shipping Fee Invoices were issued; they're issued once, for the whole window. */
     invoicesIssuedAt: v.optional(v.number()),
     /** The one `scheduler.runAt(closesAt)` auto-close job; Extend and Close now replace it. */
@@ -438,7 +467,10 @@ export default defineSchema({
     orderId: v.optional(v.id("orders")),
     /** The Order Window an `arrival` or `lateArrival` came in with. */
     orderWindowId: v.optional(v.id("orderWindows")),
-  }).index("by_variant", ["variantId"]),
+  })
+    .index("by_variant", ["variantId"])
+    // Reports read one kind (Sold offline) over a period of `_creationTime`.
+    .index("by_kind", ["kind"]),
 
   // A submitted Bag awaiting one payment. Created at Pay with its Stock Holds; unpaid, it
   // expires as a whole at `expiresAt` (a `scheduler.runAt` job) or is released when the Bag changes.
@@ -505,7 +537,8 @@ export default defineSchema({
     .index("by_receiptCode", ["receiptCode"])
     .index("by_customer", ["customerId"])
     .index("by_checkout", ["checkoutId"])
-    .index("by_invoice", ["invoiceId"]),
+    .index("by_invoice", ["invoiceId"])
+    .index("by_paidAt", ["paidAt"]),
 
   // Pre-orders and Store Orders (ADR 0002).
   orders: defineTable({
@@ -526,6 +559,12 @@ export default defineSchema({
     pickupCode: v.string(),
     status: orderStatus,
     readyAt: v.optional(v.number()),
+    /**
+     * 00:00 GMT on the day its next uncollected reminder is due, for the daily cron: Pickup
+     * orders at Ready only, counted from `readyAt`. The cron clears it once none are left or it
+     * finds the order no longer waiting at Ready for Pickup.
+     */
+    nextReminderOn: v.optional(v.number()),
     /** Set on a cancelled Pre-order: who cancelled it. */
     cancelReason: v.optional(cancelReason),
   })
@@ -534,7 +573,9 @@ export default defineSchema({
     .index("by_orderWindow", ["orderWindowId"])
     .index("by_payment", ["paymentId"])
     .index("by_status", ["status"])
-    .index("by_pickupCode_and_status", ["pickupCode", "status"]),
+    .index("by_pickupCode_and_status", ["pickupCode", "status"])
+    .index("by_nextReminderOn", ["nextReminderOn"])
+    .index("by_placedAt", ["placedAt"]),
 
   // An order's lines, with names and prices frozen at payment.
   orderLines: defineTable({
@@ -562,8 +603,8 @@ export default defineSchema({
     /** Set on `deliveryFailed`. */
     failureReason: v.optional(deliveryFailureReason),
     /**
-     * Set on `unitsCancelled`, `refundFlagged`, a Pre-order's `cancelled` and `arrived`: how many
-     * units.
+     * Set on `unitsCancelled`, `refundFlagged`, a Pre-order's `cancelled` and `arrived`, and on
+     * `forfeited` (units released to Stock): how many units.
      */
     units: v.optional(v.number()),
     /**
@@ -571,7 +612,7 @@ export default defineSchema({
      * and on `invoiced` / `invoiceReissued` (the new total).
      */
     amount: v.optional(v.number()),
-    /** Free text; on `invoiceReissued`, the void reason. */
+    /** Free text; on `invoiceReissued`, the void reason; on `fulfilmentSwitched`, from → to. */
     note: v.optional(v.string()),
   }).index("by_order", ["orderId"]),
 
@@ -602,7 +643,8 @@ export default defineSchema({
     refundNote: v.optional(v.string()),
   })
     .index("by_status", ["status"])
-    .index("by_payment", ["paymentId"]),
+    .index("by_payment", ["paymentId"])
+    .index("by_refundedAt", ["refundedAt"]),
 
   // A request to pay money not yet paid on an order, public at `/p/<code>`. Paying it in full
   // writes a `payments` row (its Receipt); it never changes once paid.
@@ -622,17 +664,27 @@ export default defineSchema({
      * and Forfeit eligibility count from it.
      */
     clockStartedAt: v.number(),
-    issuedBy: v.id("staff"),
+    /** Missing when the Customer's own fulfilment switch issued it. */
+    issuedBy: v.optional(v.id("staff")),
     /** Set once paid: the payment and when. */
     paymentId: v.optional(v.id("payments")),
     paidAt: v.optional(v.number()),
     voidReason: v.optional(v.string()),
     supersedesId: v.optional(v.id("invoices")),
     supersededById: v.optional(v.id("invoices")),
+    /**
+     * 00:00 GMT on the day its next reminder is due, for the daily cron, which clears it once
+     * none are left or it finds the invoice no longer owed. Moved to the replacement on Void &
+     * reissue.
+     */
+    nextReminderOn: v.optional(v.number()),
+    /** The clock days (7, 13, 15, 28) whose reminders were sent; carried on reissue. */
+    remindersSent: v.optional(v.array(v.number())),
   })
     .index("by_order", ["orderId"])
     .index("by_code", ["code"])
-    .index("by_status_and_clock", ["status", "clockStartedAt"]),
+    .index("by_status_and_clock", ["status", "clockStartedAt"])
+    .index("by_nextReminderOn", ["nextReminderOn"]),
 
   // One row per reference sequence (`S`, `R`, later `P` and `INV`), bumped where it's used.
   counters: defineTable({
@@ -654,6 +706,40 @@ export default defineSchema({
     changedBy: v.optional(v.id("staff")),
     changedAt: v.optional(v.number()),
   }),
+
+  // A phone number signed up for Window Alerts on the Storefront. It needn't be a Customer.
+  alertSubscribers: defineTable({
+    /** E.164, e.g. +233241234567. */
+    phone: v.string(),
+    status: alertSubscriberStatus,
+    /** How they consented: the Storefront sign-up, confirmed with a texted code. */
+    consentSource: v.optional(v.literal("storefront")),
+    /** When they confirmed; missing while pending. */
+    consentedAt: v.optional(v.number()),
+    /** The 6-digit code texted to confirm the number, while it's pending. */
+    confirmCode: v.optional(v.string()),
+    confirmCodeExpiresAt: v.optional(v.number()),
+    /** Wrong tries at the current code. */
+    confirmAttempts: v.optional(v.number()),
+    /** The 8-character `/u/` code every alert carries to unsubscribe in one tap. */
+    unsubscribeCode: v.string(),
+    unsubscribedAt: v.optional(v.number()),
+    /** The Customer with the same phone, if there was one when they confirmed. */
+    customerId: v.optional(v.id("customers")),
+  })
+    .index("by_phone", ["phone"])
+    .index("by_unsubscribeCode", ["unsubscribeCode"])
+    .index("by_status", ["status"]),
+
+  // One per Window Alert Staff sent; the one-a-day cap is checked against the latest.
+  windowAlerts: defineTable({
+    sentAt: v.number(),
+    /** The open windows it announced, in the order the SMS names them. */
+    windowIds: v.array(v.id("orderWindows")),
+    /** Confirmed Alert Subscribers it was queued to; counted up as the batches go out. */
+    recipients: v.number(),
+    staffId: v.id("staff"),
+  }).index("by_sentAt", ["sentAt"]),
 
   // A single row, seeded by the bootstrap and edited by an Owner.
   settings: defineTable({

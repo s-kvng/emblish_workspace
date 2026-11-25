@@ -2,6 +2,7 @@ import { v } from "convex/values";
 
 import { mutation, query } from "../_generated/server";
 import { requireStaff } from "../lib/guards";
+import { forfeitable } from "../model/forfeit";
 import {
   confirmFee as confirmWindowFee,
   invoiceDocumentFields,
@@ -207,6 +208,8 @@ export const sheet = query({
     day: v.number(),
     /** Days 7, 13, 15 and 28 (reminders), then 30 (Forfeit eligibility). */
     reminders: v.array(v.object({ day: v.number(), reached: v.boolean() })),
+    /** Unpaid from day 30, on a Shipping Fee Invoice: an Owner may Forfeit its Pre-order. */
+    canForfeit: v.boolean(),
     /** What this invoice replaced, newest first. */
     voidedVersions: v.array(
       v.object({
@@ -220,6 +223,12 @@ export const sheet = query({
   }),
   handler: async (ctx, { invoiceId }) => {
     await requireStaff(ctx);
-    return await invoiceSheet(ctx, invoiceId, Date.now());
+    const now = Date.now();
+    const sheet = await invoiceSheet(ctx, invoiceId, now);
+    const order = await ctx.db.get(sheet.orderId);
+    // Offered on the Shipping Fee Invoice only, never on a Delivery Fee Invoice beside it.
+    const canForfeit =
+      sheet.kind === "shippingFee" && order !== null && (await forfeitable(ctx, order, now));
+    return { ...sheet, canForfeit };
   },
 });

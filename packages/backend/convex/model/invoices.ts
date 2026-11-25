@@ -11,10 +11,15 @@ import {
   shownFulfilment,
 } from "./fulfilment";
 import { getWindow } from "./orderWindows";
+import {
+  DAY,
+  daysSince,
+  invoiceReminderDays,
+  nextInvoiceReminderOn,
+  nextUncollectedReminderOn,
+} from "./reminderSchedule";
 import { pickupLocation } from "./settings";
 import { dayMonth, ordersUrl, queueSms, renderSms } from "./sms";
-
-const DAY = 24 * 60 * 60 * 1000;
 
 /** An invoice is due this long after it was first issued. */
 export const dueAfterMs = 14 * DAY;
@@ -289,7 +294,11 @@ export async function issueInvoices(
         await ctx.db.patch(order._id, { status: "paymentDue" });
         continue;
       }
-      await ctx.db.patch(order._id, { status: "ready", readyAt: now });
+      await ctx.db.patch(order._id, {
+        status: "ready",
+        readyAt: now,
+        nextReminderOn: nextUncollectedReminderOn({ ...order, status: "ready", readyAt: now }, now),
+      });
       await ctx.db.insert("orderEvents", { orderId: order._id, kind: "ready", actor: staff });
       ready++;
       if (customer && order.fulfilment.method === "pickup") {
@@ -312,6 +321,7 @@ export async function issueInvoices(
       total: plan.total,
       status: "unpaid",
       clockStartedAt: now,
+      nextReminderOn: nextInvoiceReminderOn(now, now),
       issuedBy: actor._id,
     });
     await ctx.db.patch(order._id, { status: "paymentDue" });
@@ -400,6 +410,28 @@ export async function quoteDeliveryFee(
     return;
   }
 
+  await issueDeliveryFeeInvoice(ctx, staff, order, fulfilment.zoneName, fee);
+}
+
+/** Who an invoice action is by, as `orderEvents` records it. */
+export type InvoiceActor = Doc<"orderEvents">["actor"];
+
+/** The Staff member behind an action, for an invoice's `issuedBy`; none when the Customer did it. */
+function issuedBy(by: InvoiceActor) {
+  return by.kind === "staff" ? { issuedBy: by.staffId } : {};
+}
+
+/**
+ * A Delivery Fee Invoice for `amount` pesewas, due 14 days from now, texted to the Customer with
+ * its `/p/` link. It never leads to Forfeit.
+ */
+export async function issueDeliveryFeeInvoice(
+  ctx: Pick<MutationCtx, "db" | "scheduler">,
+  by: InvoiceActor,
+  order: Doc<"orders">,
+  zoneName: string,
+  amount: number,
+) {
   const now = Date.now();
   const code = await newInvoiceCode(ctx);
   await ctx.db.insert("invoices", {
@@ -407,28 +439,60 @@ export async function quoteDeliveryFee(
     orderId: order._id,
     number: await nextReference(ctx, "INV"),
     code,
-    lines: [{ kind: "deliveryFee", zoneName: fulfilment.zoneName, amount: fee }],
-    total: fee,
+    lines: [{ kind: "deliveryFee", zoneName, amount }],
+    total: amount,
     status: "unpaid",
     clockStartedAt: now,
-    issuedBy: actor._id,
+    nextReminderOn: nextInvoiceReminderOn(now, now),
+    ...issuedBy(by),
   });
   await ctx.db.insert("orderEvents", {
     orderId: order._id,
     kind: "invoiced",
-    actor: staff,
-    amount: fee,
+    actor: by,
+    amount,
   });
   const customer = await ctx.db.get(order.customerId);
   if (customer) {
     await queueSms(ctx, customer.phone, "deliveryFeeInvoice", {
       reference: order.reference,
-      zoneName: fulfilment.zoneName,
-      total: fee,
+      zoneName,
+      total: amount,
       due: dayMonth(now + dueAfterMs),
       payUrl: payUrl(code),
     });
   }
+}
+
+/**
+ * Refuses while a Seev checkout is still open on the invoice: it could be paid after a void,
+ * leaving a Refund to make.
+ */
+export async function refuseWhilePaying(ctx: Pick<QueryCtx, "db">, invoice: Doc<"invoices">) {
+  const sessions = await ctx.db
+    .query("paymentSessions")
+    .withIndex("by_invoice", (q) => q.eq("invoiceId", invoice._id))
+    .collect();
+  if (sessions.some((s) => s.settledAt === undefined && s.expiresAt > Date.now())) {
+    refuse(
+      "PAYMENT_IN_PROGRESS",
+      "The Customer is paying this invoice on Seev now. Try again once that checkout ends.",
+    );
+  }
+}
+
+/** Voids an unpaid invoice outright, with nothing to replace it; its reminders stop. */
+export async function voidInvoice(
+  ctx: Pick<MutationCtx, "db">,
+  invoice: Doc<"invoices">,
+  reason: string,
+) {
+  await refuseWhilePaying(ctx, invoice);
+  await ctx.db.patch(invoice._id, {
+    status: "void",
+    voidReason: reason,
+    nextReminderOn: undefined,
+  });
 }
 
 /** The invoice still in force at the end of a void → replacement chain: itself if not replaced. */
@@ -491,17 +555,7 @@ export async function voidAndReissue(
   }
   const order = await ctx.db.get(invoice.orderId);
   if (!order) refuse("NOT_FOUND", "That invoice's order doesn't exist.");
-  // A Seev checkout still open on it could be paid after the void, leaving a Refund to make.
-  const sessions = await ctx.db
-    .query("paymentSessions")
-    .withIndex("by_invoice", (q) => q.eq("invoiceId", invoice._id))
-    .collect();
-  if (sessions.some((s) => s.settledAt === undefined && s.expiresAt > Date.now())) {
-    refuse(
-      "PAYMENT_IN_PROGRESS",
-      "The Customer is paying this invoice on Seev now. Try again once that checkout ends.",
-    );
-  }
+  await refuseWhilePaying(ctx, invoice);
   if (
     invoice.kind === "shippingFee" &&
     deliveryFee !== undefined &&
@@ -551,6 +605,31 @@ export async function voidAndReissue(
     refuse("ZERO_TOTAL", "The corrected invoice comes to GH₵0. Nothing would be left to pay.");
   }
 
+  return await writeReplacement(
+    ctx,
+    { kind: "staff", staffId: actor._id },
+    invoice,
+    order,
+    lines,
+    voidReason,
+  );
+}
+
+/**
+ * Writes the corrected invoice with these lines over an unpaid one: its own number and `/p/`
+ * code, the first issue date kept so the due date, reminders and Forfeit clock carry on. The old
+ * one is voided with the reason, and the Customer is texted the new link.
+ */
+export async function writeReplacement(
+  ctx: Pick<MutationCtx, "db" | "scheduler">,
+  by: InvoiceActor,
+  invoice: Doc<"invoices">,
+  order: Doc<"orders">,
+  lines: Doc<"invoices">["lines"],
+  voidReason: string,
+) {
+  const { fulfilment } = order;
+  const total = lines.reduce((sum, line) => sum + line.amount, 0);
   const code = await newInvoiceCode(ctx);
   const replacementId = await ctx.db.insert("invoices", {
     kind: invoice.kind,
@@ -561,13 +640,17 @@ export async function voidAndReissue(
     total,
     status: "unpaid",
     clockStartedAt: invoice.clockStartedAt,
-    issuedBy: actor._id,
+    // The reminders carry on from where the voided one left off.
+    ...(invoice.nextReminderOn !== undefined ? { nextReminderOn: invoice.nextReminderOn } : {}),
+    ...(invoice.remindersSent ? { remindersSent: invoice.remindersSent } : {}),
+    ...issuedBy(by),
     supersedesId: invoice._id,
   });
   await ctx.db.patch(invoice._id, {
     status: "void",
     voidReason,
     supersededById: replacementId,
+    nextReminderOn: undefined,
   });
   // A corrected Elsewhere quote replaces the one on the order.
   const reissuedDelivery = lines.find((line) => line.kind === "deliveryFee");
@@ -579,7 +662,7 @@ export async function voidAndReissue(
   await ctx.db.insert("orderEvents", {
     orderId: order._id,
     kind: "invoiceReissued",
-    actor: { kind: "staff", staffId: actor._id },
+    actor: by,
     amount: total,
     note: voidReason,
   });
@@ -743,12 +826,10 @@ export async function invoiceProgress(ctx: Pick<QueryCtx, "db">, window: Doc<"or
 
 /** Unpaid this many days after first issue, a Shipping Fee Invoice can be Forfeited. */
 export const forfeitAfterDays = 30;
-/** The days after first issue that reminders go out on, while unpaid. */
-export const reminderDays = [7, 13, 15, 28] as const;
 
 /** Which day of its clock an invoice is on, in Ghana time (GMT): day 0 is the day of first issue. */
 export function invoiceDay(clockStartedAt: number, now: number) {
-  return Math.floor(now / DAY) - Math.floor(clockStartedAt / DAY);
+  return daysSince(clockStartedAt, now);
 }
 
 /**
@@ -847,8 +928,8 @@ export async function invoiceInbox(ctx: Pick<QueryCtx, "db">, filter: InboxFilte
 /**
  * The Back Office invoice sheet, for the live end of `invoiceId`'s chain (so a reissued invoice
  * follows to its replacement): the paper invoice, where it stands now and its day count, the
- * reminder dots (days 7/13/15/28, then 30 for Forfeit), the payment, and the earlier voided
- * versions with their reasons.
+ * reminder dots (days 7/13/15/28, filled once that reminder was sent, then 30 for Forfeit,
+ * filled once reached unpaid), the payment, and the earlier voided versions with their reasons.
  */
 export async function invoiceSheet(
   ctx: Pick<QueryCtx, "db">,
@@ -865,9 +946,10 @@ export async function invoiceSheet(
   const window = order.orderWindowId ? await ctx.db.get(order.orderWindowId) : null;
   const product = window ? await ctx.db.get(window.productId) : null;
   const day = invoiceDay(invoice.clockStartedAt, now);
-  // Once paid, the clock stopped: no more reminders, and no Forfeit.
+  // Once paid, the clock stopped: no Forfeit.
   const clockDay =
     invoice.paidAt !== undefined ? invoiceDay(invoice.clockStartedAt, invoice.paidAt) : day;
+  const sent = new Set(invoice.remindersSent);
   const versions = [];
   for (const version of await voidedVersions(ctx, invoice)) {
     const replacement = version.supersededById ? await ctx.db.get(version.supersededById) : null;
@@ -889,10 +971,10 @@ export async function invoiceSheet(
     ...(product ? { productName: product.name } : {}),
     state: invoiceState(invoice, now),
     day,
-    reminders: [...reminderDays, forfeitAfterDays].map((d) => ({
-      day: d,
-      reached: clockDay >= d,
-    })),
+    reminders: [
+      ...invoiceReminderDays.map((d) => ({ day: d, reached: sent.has(d) })),
+      { day: forfeitAfterDays, reached: clockDay >= forfeitAfterDays },
+    ],
     voidedVersions: versions,
   };
 }

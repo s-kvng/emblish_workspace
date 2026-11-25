@@ -81,7 +81,11 @@ describe("Staff cancelling units before handover", () => {
     const detail = await esi.query(api.backOffice.orders.get, { orderId: order.orderId });
     expect(detail.status).toBe("cancelled");
     expect(detail.primaryAction).toBeNull();
-    expect(detail.history.map((event) => event.kind)).toEqual(["paid", "unitsCancelled", "cancelled"]);
+    expect(detail.history.map((event) => event.kind)).toEqual([
+      "paid",
+      "unitsCancelled",
+      "cancelled",
+    ]);
     // GHS 450 for the tote and GHS 30 for the Delivery that won't happen.
     expect(detail.toRefund).toBe(48000);
     expect((await ama.query(api.backOffice.refunds.toMake, {})).total).toBe(48000);
@@ -154,9 +158,9 @@ async function oneRefundToMake() {
 describe("the Owner paying a Refund out", () => {
   test("paid from the Seev dashboard and marked refunded, it leaves Refunds to make and the Customer sees it refunded", async () => {
     const { ama, customer, order, refundId } = await oneRefundToMake();
-    expect(
-      (await customer.query(api.storefront.orders.mine, {}))[0]?.refunds,
-    ).toEqual([{ amount: 45000, reason: "cancelledLine", refunded: false }]);
+    expect((await customer.query(api.storefront.orders.mine, {}))[0]?.refunds).toEqual([
+      { amount: 45000, reason: "cancelledLine", refunded: false },
+    ]);
 
     await ama.mutation(api.backOffice.refunds.markRefunded, {
       refundId,
@@ -176,9 +180,9 @@ describe("the Owner paying a Refund out", () => {
       amount: 45000,
       note: "MoMo txn 5521",
     });
-    expect(
-      (await customer.query(api.storefront.orders.mine, {}))[0]?.refunds,
-    ).toEqual([{ amount: 45000, reason: "cancelledLine", refunded: true }]);
+    expect((await customer.query(api.storefront.orders.mine, {}))[0]?.refunds).toEqual([
+      { amount: 45000, reason: "cancelledLine", refunded: true },
+    ]);
   });
 
   test("only an Owner can, and only once", async () => {
@@ -254,9 +258,9 @@ describe("the Owner refunding after handover", () => {
     });
 
     expect(await stockOf(t, small)).toMatchObject({ onHand: 1 });
-    expect(
-      (await ama.query(api.backOffice.orders.get, { orderId: order.orderId })).toRefund,
-    ).toBe(90000);
+    expect((await ama.query(api.backOffice.orders.get, { orderId: order.orderId })).toRefund).toBe(
+      90000,
+    );
   });
 
   test("a delivered order's Delivery Fee can be refunded, once", async () => {
@@ -268,7 +272,10 @@ describe("the Owner refunding after handover", () => {
       [{ variantId: medium, quantity: 1 }],
       accraDelivery(zones.accra),
     );
-    await esi.mutation(api.backOffice.orders.dispatch, { orderId: order.orderId, riderName: "Yaw" });
+    await esi.mutation(api.backOffice.orders.dispatch, {
+      orderId: order.orderId,
+      riderName: "Yaw",
+    });
     await esi.mutation(api.backOffice.orders.markDelivered, { orderId: order.orderId });
     const refundFee = () =>
       ama.mutation(api.backOffice.orders.refundAfterHandover, {
@@ -279,9 +286,9 @@ describe("the Owner refunding after handover", () => {
       });
 
     await refundFee();
-    expect(
-      (await ama.query(api.backOffice.orders.get, { orderId: order.orderId })).toRefund,
-    ).toBe(3000);
+    expect((await ama.query(api.backOffice.orders.get, { orderId: order.orderId })).toRefund).toBe(
+      3000,
+    );
     expect(await refusal(refundFee())).toBe("NOTHING_TO_REFUND");
   });
 

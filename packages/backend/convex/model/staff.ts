@@ -1,8 +1,8 @@
 import { ConvexError } from "convex/values";
 
-import { components } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { endAllSessions } from "./sessions";
 
 /** The Staff member behind a Better Auth user, or null if there's none or they're deactivated. */
 export async function getActiveStaff(
@@ -95,18 +95,7 @@ export async function deactivateStaff(
   if (staff.status === "deactivated") return;
   await assertAnotherActiveOwner(ctx, staff);
   await ctx.db.patch(staffId, { status: "deactivated" });
-  // Every page, so no session survives however many devices they used.
-  let cursor: string | null = null;
-  do {
-    const deleted: { isDone: boolean; continueCursor: string } = await ctx.runMutation(
-      components.betterAuth.adapter.deleteMany,
-      {
-        input: { model: "session", where: [{ field: "userId", value: staff.authUserId }] },
-        paginationOpts: { cursor, numItems: 100 },
-      },
-    );
-    cursor = deleted.isDone ? null : deleted.continueCursor;
-  } while (cursor !== null);
+  await endAllSessions(ctx, staff.authUserId);
 }
 
 export async function reactivateStaff(ctx: Pick<MutationCtx, "db">, staffId: Id<"staff">) {

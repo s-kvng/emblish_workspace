@@ -6,6 +6,8 @@ The one Back Office exception is accepting an invitation: the invitee isn't Staf
 
 Browsing the catalog is the Storefront's one guard-free door: `convex/storefront/catalog.ts` is open to anyone, signed in or not, and returns only Published Products and the fields a Customer may see, plus the pickup point's address and hours and the active Delivery Zones with their fees, which the store publishes anyway. Every other Storefront function opens with `requireCustomer` or a public-by-code check.
 
+Window Alert sign-up is the second guard-free door: an Alert Subscriber needn't be a Customer, so `convex/storefront/alerts.ts` `signUp` and `confirm` are open to anyone. They only ever touch the `alertSubscribers` row for the phone number given. `signUp` texts a code, sharing the login codes' limit of three an hour per number, and nothing is confirmed until `confirm` gets that code back. Its `unsubscribe` is a public-by-code lookup on the `/u/<code>` link.
+
 A Storefront **action** can't read the database, so it can't run `requireCustomer` itself. It opens with `requireIdentity` instead and passes `identity.subject` to an internal `system/` query that finishes the Customer and ownership check before anything else happens (`storefront/checkout.ts` `pay` and `refresh`). The Receipt at `/r/<code>` (`storefront/receipts.ts`) is a public-by-code lookup.
 
 ## Consequences

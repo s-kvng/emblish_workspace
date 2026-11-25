@@ -2,7 +2,7 @@ import type { Infer } from "convex/values";
 
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
-import type { MutationCtx } from "../_generated/server";
+import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { smsTemplate } from "../schema";
 import { ghs } from "./money";
 
@@ -77,6 +77,20 @@ type ArrivedSmsArgs = {
   refund: number;
   ordersUrl: string;
 };
+
+/** What the invoice reminders say about one unpaid invoice. */
+type InvoiceReminderArgs = {
+  kind: "shippingFee" | "deliveryFee";
+  reference: string;
+  total: number;
+  /** From `dayMonth`. */
+  due: string;
+  payUrl: string;
+};
+
+function feeName(kind: InvoiceReminderArgs["kind"]) {
+  return kind === "shippingFee" ? "Shipping Fee" : "Delivery Fee";
+}
 
 function units(count: number) {
   return count === 1 ? "unit" : "units";
@@ -347,6 +361,82 @@ export const smsTemplates = {
       payUrl: "https://emblish.com/p/K7Q2M9XA",
     },
   }),
+  // #19 rows 6a and 7: day 7 of an unpaid invoice.
+  invoiceReminder: template<InvoiceReminderArgs>({
+    render: ({ kind, reference, total, due, payUrl }) =>
+      `Reminder: ${ghs(total)} ${feeName(kind)} for ${reference} is due ${due}. Pay: ${payUrl}`,
+    example: {
+      kind: "shippingFee",
+      reference: "P-1042",
+      total: 12000,
+      due: "14 Nov",
+      payUrl: "https://emblish.com/p/K7Q2M9XA",
+    },
+  }),
+  // #19 row 6b: day 13, the day before it's due.
+  invoiceDueTomorrow: template<InvoiceReminderArgs>({
+    render: ({ kind, reference, total, payUrl }) =>
+      `${ghs(total)} ${feeName(kind)} for ${reference} is due tomorrow. Pay: ${payUrl}`,
+    example: {
+      kind: "shippingFee",
+      reference: "P-1042",
+      total: 12000,
+      due: "14 Nov",
+      payUrl: "https://emblish.com/p/K7Q2M9XA",
+    },
+  }),
+  // #19 rows 6c and 7: day 15, overdue. Only a Shipping Fee can lead to Forfeit after 30 days.
+  invoiceOverdue: template<InvoiceReminderArgs>({
+    render: ({ kind, reference, total, payUrl }) =>
+      `${ghs(total)} ${feeName(kind)} for ${reference} is overdue. ` +
+      (kind === "shippingFee" ? "Orders unpaid after 30 days may be cancelled. " : "") +
+      `Pay: ${payUrl}`,
+    example: {
+      kind: "shippingFee",
+      reference: "P-1042",
+      total: 12000,
+      due: "14 Nov",
+      payUrl: "https://emblish.com/p/K7Q2M9XA",
+    },
+  }),
+  // #19 rows 6d and 7: day 28. A Shipping Fee one names the day it can be Forfeited after
+  // (first issue + 30); a Delivery Fee is never Forfeited, so the goods just wait for it.
+  invoiceFinalReminder: template<InvoiceReminderArgs & { unpaidBy: string }>({
+    render: ({ kind, reference, total, unpaidBy, payUrl }) =>
+      kind === "shippingFee"
+        ? `Final reminder: ${ghs(total)} for ${reference} is overdue. If unpaid by ${unpaidBy} ` +
+          `the order may be cancelled and your item payment kept. Pay: ${payUrl}`
+        : `Final reminder: ${ghs(total)} Delivery Fee for ${reference} is still unpaid. ` +
+          `We will deliver once it is paid. Pay: ${payUrl}`,
+    example: {
+      kind: "shippingFee",
+      reference: "P-1042",
+      total: 12000,
+      due: "14 Nov",
+      unpaidBy: "30 Nov",
+      payUrl: "https://emblish.com/p/K7Q2M9XA",
+    },
+  }),
+  // #19 row 15: a Pickup order still waiting at Ready, days 3, 7, 14 and 28 after.
+  uncollectedReminder: template<{ reference: string; pickupCode: string; location: string }>({
+    render: ({ reference, pickupCode, location: where }) =>
+      `Reminder: ${reference} is waiting for you. Pickup code: ${pickupCode}. ${location(where)}.`,
+    example: {
+      reference: "P-1042",
+      pickupCode: "482913",
+      location: "Osu, Oxford Street, opposite the Shell. Mon-Sat 9am-6pm",
+    },
+    redact: (body) => body.replace(/Pickup code: \d{6}/, "Pickup code: ******"),
+  }),
+  // #19 row 14: the Owner Forfeits a Pre-order. "Questions?" is left out until the store's
+  // WhatsApp number is set.
+  forfeited: template<{ reference: string; whatsappUrl?: string }>({
+    render: ({ reference, whatsappUrl }) =>
+      `${reference} has been cancelled because its Shipping Fee was not paid. ` +
+      "Your item payment is not refunded." +
+      (whatsappUrl ? ` Questions? ${whatsappUrl}` : ""),
+    example: { reference: "P-1042", whatsappUrl: "wa.me/233241112222" },
+  }),
   // #19 row 8: Ready for Pickup without a payment, such as a GHS 0 Shipping Fee.
   readyForPickup: template<{
     reference: string;
@@ -392,6 +482,37 @@ export const smsTemplates = {
     },
     redact: (body) => body.replace(/(Pickup code for \S+): \d{6}/, "$1: ******"),
   }),
+  // #19 row 16: Staff announced open windows to every confirmed Alert Subscriber. One window
+  // links to its Product; several link to the Storefront and give the earliest close.
+  windowAlert: template<{
+    /** The announced windows' Products, in the order Staff picked them. */
+    products: { name: string; url: string }[];
+    /** From `dayMonth`: the earliest close among them. */
+    orderBy: string;
+    siteUrl: string;
+    unsubscribeUrl: string;
+  }>({
+    render: ({ products, orderBy, siteUrl, unsubscribeUrl }) => {
+      const [first] = products;
+      const name = smsSafe(first?.name ?? "", 24);
+      return products.length === 1
+        ? `New pre-order at Emblish: ${name}. Order by ${orderBy}: ${first?.url} ` +
+            `Stop alerts: ${unsubscribeUrl}`
+        : `New pre-orders at Emblish: ${name} and ${products.length - 1} more. ` +
+            `Order by ${orderBy}: ${siteUrl} Stop alerts: ${unsubscribeUrl}`;
+    },
+    example: {
+      products: [
+        {
+          name: "Ankara Wrap Dress with a Very Long Name Indeed",
+          url: "https://emblish.com/products/ankara-wrap-dress-with-a-very-long-name-indeed",
+        },
+      ],
+      orderBy: "20 Nov",
+      siteUrl: "https://emblish.com",
+      unsubscribeUrl: "https://emblish.com/u/K7Q2M9XA",
+    },
+  }),
   // A late charge Stock couldn't fill at all: nothing to pick up, all of it refunded.
   paymentNotFilled: template({
     render: ({ amount, receiptUrl }: { amount: number; receiptUrl: string }) =>
@@ -435,6 +556,23 @@ export function redactSms(key: SmsTemplateKey, body: string): string {
   return redact ? redact(body) : body;
 }
 
+/** A number gets at most this many login codes an hour, for sign-in and Window Alerts together. */
+const loginCodesPerHour = 3;
+
+/** Whether the number may be texted another login code now. */
+export async function loginCodeAllowed(ctx: Pick<QueryCtx, "db">, phone: string) {
+  const recent = await ctx.db
+    .query("smsMessages")
+    .withIndex("by_to_and_template", (q) =>
+      q
+        .eq("to", phone)
+        .eq("template", "loginCode")
+        .gt("_creationTime", Date.now() - 60 * 60 * 1000),
+    )
+    .take(loginCodesPerHour);
+  return recent.length < loginCodesPerHour;
+}
+
 /**
  * The only way to send an SMS: renders the template into an `smsMessages` row and
  * schedules `system/sms.send` to hand it to Arkesel once this mutation commits.
@@ -444,12 +582,14 @@ export async function queueSms<K extends SmsTemplateKey>(
   to: string,
   key: K,
   args: Parameters<(typeof smsTemplates)[K]["render"]>[0],
+  refs: { windowAlertId?: Id<"windowAlerts"> } = {},
 ): Promise<Id<"smsMessages">> {
   const smsMessageId = await ctx.db.insert("smsMessages", {
     to,
     template: key,
     body: renderSms(key, args),
     status: "queued",
+    ...refs,
   });
   await ctx.scheduler.runAfter(0, internal.system.sms.send, { smsMessageId });
   return smsMessageId;

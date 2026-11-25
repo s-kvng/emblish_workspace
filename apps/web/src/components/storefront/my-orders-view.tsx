@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import ProductPhoto from "@/components/storefront/product-photo";
+import SwitchFulfilment from "@/components/storefront/switch-fulfilment-sheet";
 import { authClient } from "@/lib/auth-client";
 import { messageOf } from "@/lib/convex-errors";
 import { cedi } from "@/lib/money";
@@ -58,6 +59,8 @@ const eventLabel: Record<Card["history"][number]["kind"], string> = {
   invoiceReissued: "Invoice corrected",
   ready: "Ready for you",
   deliveryQuoted: "Delivery Fee quoted",
+  fulfilmentSwitched: "Pickup / delivery changed",
+  forfeited: "Cancelled: Shipping Fee not paid",
 };
 
 /**
@@ -518,7 +521,10 @@ function CardDetail({ card }: { card: Card }) {
       <Section title="Items">
         <ul className="grid gap-1 text-sm">
           {card.lines.map((line) => (
-            <li key={`${line.productName}-${line.variantLabel}`} className="flex justify-between gap-3">
+            <li
+              key={`${line.productName}-${line.variantLabel}`}
+              className="flex justify-between gap-3"
+            >
               <span>
                 {line.quantity}× {line.productName}
                 {line.variantLabel && (
@@ -585,10 +591,11 @@ function CardDetail({ card }: { card: Card }) {
             <span className="block text-muted-foreground text-xs">
               {card.fulfilment.deliveryFee === undefined
                 ? "Delivery Fee: we'll text you a quote"
-                : `Delivery Fee ${cedi(card.fulfilment.deliveryFee)}, paid`}
+                : `Delivery Fee ${cedi(card.fulfilment.deliveryFee)}`}
             </span>
           </p>
         )}
+        <SwitchFulfilment card={card} />
       </Section>
 
       {card.kind === "preorder" && card.status === "awaitingArrival" && (

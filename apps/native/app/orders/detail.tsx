@@ -11,6 +11,7 @@ import { type PropsWithChildren, useState } from "react";
 import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { ForfeitAction } from "@/components/forfeit";
 import {
   customerLabel,
   deliveryFailureLabel,
@@ -20,6 +21,7 @@ import {
   overrideReasonLabel,
 } from "@/components/order-labels";
 import { ScreenHeader } from "@/components/screen-header";
+import { SwitchFulfilment } from "@/components/switch-fulfilment";
 import { refusalMessage } from "@/lib/form-errors";
 import { formatGhs, parseGhs } from "@/lib/money";
 import { useStaffMember } from "@/lib/staff-member";
@@ -40,6 +42,8 @@ const eventLabel = {
   invoiceReissued: "Invoice voided & reissued",
   ready: "Ready",
   deliveryQuoted: "Delivery Fee quoted",
+  fulfilmentSwitched: "Fulfilment switched",
+  forfeited: "Forfeited",
 } as const;
 
 const invoiceStatusLabel = { unpaid: "Unpaid", paid: "Paid", void: "Void" } as const;
@@ -62,7 +66,7 @@ function statusText(order: Order) {
 /** How the Delivery Fee stands, under the address. */
 function deliveryFeeText(fulfilment: Extract<Order["fulfilment"], { method: "delivery" }>) {
   if (fulfilment.deliveryFee !== undefined) {
-    return `Delivery Fee ${formatGhs(fulfilment.deliveryFee)}, paid at Checkout`;
+    return `Delivery Fee ${formatGhs(fulfilment.deliveryFee)}`;
   }
   if (fulfilment.quotedFee !== undefined) {
     return `Delivery Fee ${formatGhs(fulfilment.quotedFee)}, quoted (Elsewhere in Ghana)`;
@@ -229,6 +233,8 @@ export default function OrderDetailScreen() {
             </Section>
           ) : null}
 
+          <SwitchAction order={order} />
+          <ForfeitSection order={order} />
           <OrderActions order={order} />
 
           <Section title="History">
@@ -244,7 +250,9 @@ export default function OrderDetailScreen() {
                   </Text>
                   {event.amount !== undefined ? (
                     <Text className="font-sans text-foreground text-sm">
-                      {event.units ? `${event.units} ${event.units === 1 ? "unit" : "units"} · ` : ""}
+                      {event.units
+                        ? `${event.units} ${event.units === 1 ? "unit" : "units"} · `
+                        : ""}
                       {formatGhs(event.amount)}
                       {event.note && !event.overrideReason && !event.failureReason
                         ? ` (${event.note})`
@@ -351,6 +359,33 @@ function QuoteDeliveryFee({ order }: { order: Order }) {
   );
 }
 
+/** Switch fulfilment, until the order is Dispatched or Collected. */
+function SwitchAction({ order }: { order: Order }) {
+  const [open, setOpen] = useState(false);
+  if (!order.canSwitch) return null;
+  return (
+    <Section title="Switch fulfilment">
+      {open ? (
+        <SwitchFulfilment order={order} onDone={() => setOpen(false)} />
+      ) : (
+        <Button variant="secondary" onPress={() => setOpen(true)}>
+          <Button.Label>Switch Pickup / Delivery</Button.Label>
+        </Button>
+      )}
+    </Section>
+  );
+}
+
+/** From day 30 of an unpaid Shipping Fee Invoice: Forfeit, for an Owner. */
+function ForfeitSection({ order }: { order: Order }) {
+  if (!order.canForfeit) return null;
+  return (
+    <Section title="Forfeit">
+      <ForfeitAction orderId={order.orderId} reference={order.reference} />
+    </Section>
+  );
+}
+
 /**
  * The rest of the order's actions: Staff cancel units until handover; after it, only an Owner
  * refunds (Staff see it locked). Both flag a Refund for Refunds to make.
@@ -443,8 +478,8 @@ function CancelPreorderForm({ order, onDone }: { order: Order; onDone: () => voi
         accessibilityLabel="Note"
       />
       <Text className="font-sans text-muted text-xs">
-        Every unit leaves the window, and the Item Payment of {formatGhs(amount)} goes on Refunds
-        to make for an Owner to pay out.
+        Every unit leaves the window, and the Item Payment of {formatGhs(amount)} goes on Refunds to
+        make for an Owner to pay out.
       </Text>
       {error ? <Text className="font-sans-semibold text-danger text-sm">{error}</Text> : null}
       <View className="flex-row gap-2">
@@ -575,12 +610,7 @@ function RefundForm({
         <Button variant="secondary" className="flex-1" onPress={onDone} isDisabled={busy}>
           <Button.Label>Back</Button.Label>
         </Button>
-        <Button
-          variant="danger"
-          className="flex-1"
-          onPress={submit}
-          isDisabled={busy || !ready}
-        >
+        <Button variant="danger" className="flex-1" onPress={submit} isDisabled={busy || !ready}>
           <Button.Label>{mode === "cancel" ? "Cancel units" : "Flag refund"}</Button.Label>
         </Button>
       </View>

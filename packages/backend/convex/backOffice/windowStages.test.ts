@@ -426,7 +426,9 @@ describe("Change expected dates or note", () => {
       [{ expectedFrom: dec9, expectedTo: dec2 }, "INVALID_DATES"],
     ] as const) {
       expect(
-        await refusal(ama.mutation(api.backOffice.windows.change, { windowId: sheaWindow, ...dates })),
+        await refusal(
+          ama.mutation(api.backOffice.windows.change, { windowId: sheaWindow, ...dates }),
+        ),
       ).toBe(code);
     }
 

@@ -3,6 +3,7 @@ import { ConvexError, type Infer } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { type refundKind, type refundLine, type refundMethod, windowStages } from "../schema";
+import { deliveryFeeToday } from "./fulfilment";
 import { recordMovement } from "./stock";
 import { windowRowFor } from "./windowLookups";
 
@@ -28,11 +29,7 @@ export function keptUnits(line: Doc<"orderLines">) {
  * Checks the units asked for against the order's lines and marks them refunded on each line,
  * returning the lines with their units and the pesewas they come to.
  */
-async function takeUnits(
-  ctx: Pick<MutationCtx, "db">,
-  order: Doc<"orders">,
-  asked: RefundLine[],
-) {
+async function takeUnits(ctx: Pick<MutationCtx, "db">, order: Doc<"orders">, asked: RefundLine[]) {
   if (new Set(asked.map((line) => line.orderLineId)).size !== asked.length) {
     refuse("DUPLICATE_LINE", "List each line once.");
   }
@@ -70,18 +67,18 @@ export type RefundableFee = { paymentId: Id<"payments">; amount: number };
 /**
  * Each payment the order's Delivery Fee was paid on, with what's left to refund of it: a fixed
  * zone's fee paid at Checkout with a Store Order, and any Delivery Fee line on a paid invoice (a
- * Delivery Fee Invoice, or a Pre-order's Shipping Fee Invoice). An unpaid fee has none.
+ * Delivery Fee Invoice, a switch's difference, or a Pre-order's Shipping Fee Invoice). An unpaid
+ * fee has none; one switched away from was already flagged.
  */
 export async function refundableDeliveryFees(
   ctx: Pick<QueryCtx, "db">,
   order: Doc<"orders">,
 ): Promise<RefundableFee[]> {
-  const { fulfilment } = order;
-  if (fulfilment.method !== "delivery") return [];
   const paid: RefundableFee[] = [];
-  if (order.kind === "store" && fulfilment.deliveryFee) {
-    paid.push({ paymentId: order.paymentId, amount: fulfilment.deliveryFee });
-  }
+  // As paid at Checkout: a fulfilment switch since may have changed the order's own fee.
+  const checkout = order.kind === "store" ? await ctx.db.get(order.checkoutId) : null;
+  const atCheckout = checkout ? deliveryFeeToday(checkout.fulfilment) : 0;
+  if (atCheckout > 0) paid.push({ paymentId: order.paymentId, amount: atCheckout });
   const invoices = await ctx.db
     .query("invoices")
     .withIndex("by_order", (q) => q.eq("orderId", order._id))

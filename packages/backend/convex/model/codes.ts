@@ -33,6 +33,23 @@ export async function newInvoiceCode(ctx: Pick<QueryCtx, "db">) {
   }
 }
 
+/** An Alert Subscriber's 8-character `/u/` unsubscribe code, regenerated on collision. */
+export async function newUnsubscribeCode(ctx: Pick<QueryCtx, "db">) {
+  for (;;) {
+    const code = randomFrom(unambiguous, 8);
+    const taken = await ctx.db
+      .query("alertSubscribers")
+      .withIndex("by_unsubscribeCode", (q) => q.eq("unsubscribeCode", code))
+      .first();
+    if (!taken) return code;
+  }
+}
+
+/** A 6-digit code to text, such as the one that confirms a Window Alert sign-up. */
+export function newDigitCode() {
+  return randomFrom("0123456789", 6);
+}
+
 /** 6 random digits, unique among open orders; a code may repeat once its order closes. */
 export async function newPickupCode(ctx: Pick<QueryCtx, "db">) {
   for (;;) {
@@ -53,10 +70,7 @@ async function pickupCodeTaken(ctx: Pick<QueryCtx, "db">, code: string) {
 }
 
 /** The next reference in a sequence, e.g. `S-0001`, bumping its counter in this mutation. */
-export async function nextReference(
-  ctx: Pick<MutationCtx, "db">,
-  name: "S" | "P" | "R" | "INV",
-) {
+export async function nextReference(ctx: Pick<MutationCtx, "db">, name: "S" | "P" | "R" | "INV") {
   const counter = await ctx.db
     .query("counters")
     .withIndex("by_name", (q) => q.eq("name", name))

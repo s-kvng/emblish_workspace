@@ -11,4 +11,14 @@ const uniwindConfig = withUniwindConfig(wrapWithReanimatedMetroConfig(config), {
   dtsFile: "./uniwind-types.d.ts",
 });
 
+// Uniwind points `react-native` imports at its own re-export, which lacks `AssetRegistry`,
+// so expo-asset (and every font load through it) would get `undefined`. It gets the real one.
+const uniwindResolveRequest = uniwindConfig.resolver.resolveRequest;
+uniwindConfig.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (moduleName === "react-native" && /[\\/]expo-asset[\\/]/.test(context.originModulePath)) {
+    return context.resolveRequest(context, moduleName, platform);
+  }
+  return uniwindResolveRequest(context, moduleName, platform);
+};
+
 module.exports = withVarlockMetroConfig(uniwindConfig);

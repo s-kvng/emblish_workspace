@@ -9,24 +9,24 @@
  */
 
 import type {
-	ActionBuilder,
-	GenericActionCtx,
-	GenericDatabaseReader,
-	GenericDatabaseWriter,
-	GenericMutationCtx,
-	GenericQueryCtx,
-	HttpActionBuilder,
-	MutationBuilder,
-	QueryBuilder,
+  ActionBuilder,
+  HttpActionBuilder,
+  MutationBuilder,
+  QueryBuilder,
+  GenericActionCtx,
+  GenericMutationCtx,
+  GenericQueryCtx,
+  GenericDatabaseReader,
+  GenericDatabaseWriter,
 } from "convex/server";
 import {
-	actionGeneric,
-	httpActionGeneric,
-	internalActionGeneric,
-	internalMutationGeneric,
-	internalQueryGeneric,
-	mutationGeneric,
-	queryGeneric,
+  actionGeneric,
+  httpActionGeneric,
+  queryGeneric,
+  mutationGeneric,
+  internalActionGeneric,
+  internalMutationGeneric,
+  internalQueryGeneric,
 } from "convex/server";
 import type { DataModel } from "./dataModel.js";
 
@@ -37,8 +37,8 @@ import type { DataModel } from "./dataModel.js";
  * `convex.config.ts`.
  */
 type Env = {
-	readonly CONVEX_CLOUD_URL: string;
-	readonly CONVEX_SITE_URL: string;
+  readonly CONVEX_CLOUD_URL: string;
+  readonly CONVEX_SITE_URL: string;
 };
 
 /**
@@ -60,7 +60,7 @@ export const query: QueryBuilder<DataModel, "public"> = queryGeneric;
  * @returns The wrapped query. Include this as an `export` to name it and make it accessible.
  */
 export const internalQuery: QueryBuilder<DataModel, "internal"> =
-	internalQueryGeneric;
+  internalQueryGeneric;
 
 /**
  * Define a mutation in this Convex app's public API.
@@ -81,7 +81,7 @@ export const mutation: MutationBuilder<DataModel, "public"> = mutationGeneric;
  * @returns The wrapped mutation. Include this as an `export` to name it and make it accessible.
  */
 export const internalMutation: MutationBuilder<DataModel, "internal"> =
-	internalMutationGeneric;
+  internalMutationGeneric;
 
 /**
  * Define an action in this Convex app's public API.
@@ -103,7 +103,7 @@ export const action: ActionBuilder<DataModel, "public"> = actionGeneric;
  * @returns The wrapped function. Include this as an `export` to name it and make it accessible.
  */
 export const internalAction: ActionBuilder<DataModel, "internal"> =
-	internalActionGeneric;
+  internalActionGeneric;
 
 /**
  * Define an HTTP action.
@@ -118,7 +118,7 @@ export const internalAction: ActionBuilder<DataModel, "internal"> =
  */
 export const httpAction: HttpActionBuilder = httpActionGeneric;
 export const env: Env = (globalThis as unknown as { process: { env: Env } })
-	.process.env;
+  .process.env;
 
 /**
  * A set of services for use within Convex query functions.
